@@ -212,6 +212,7 @@ for line in sys.stdin:
         result = {}
     elif m == 'thread/start':
         assert r['params']['dynamicTools'][0]['name'] == 'loopx_manager_read'
+        assert 'repository_artifact' in r['params']['dynamicTools'][0]['inputSchema']['properties']['view']['enum']
         result = {'thread': {'id': 'fixture-thread'}}
     elif m == 'turn/start':
         text = json.dumps(r['params']['input'])
@@ -318,3 +319,94 @@ def test_stopped_goals_are_opt_in_but_stale_active_remains_visible(tmp_path):
     assert history['matched'] == 3
     explicit = tool.read(TOOL_NAME, {'view': 'portfolio', 'goal_id': 'old'})
     assert explicit['rows'][0]['activation_state'] == 'stopped'
+
+
+def repository_artifact_inspector(tmp_path, monkeypatch, *, profiled=True):
+    import loopx.capabilities.manager_context.repository_evidence as repository_evidence
+    from loopx.capabilities.manager_context import authority
+
+    profiles = {
+        "research": {
+            "schema_version": "agent_profile_v1", "agent_id": "research",
+            "profile_role": "market research", "preferred_action_kinds": ["research_*"],
+        },
+        "steward": {
+            "schema_version": "agent_profile_v1", "agent_id": "steward",
+            "profile_role": "repository delivery", "preferred_action_kinds": ["repository_*"],
+        },
+    } if profiled else {}
+    registry = tmp_path / "registry.json"
+    registry.write_text(json.dumps({"goals": [{
+        "id": "alpha", "repo": str(tmp_path),
+        "coordination": {
+            "registered_agents": ["research", "steward"],
+            **({"agent_profiles": profiles} if profiles else {}),
+        },
+    }]}))
+    monkeypatch.setattr(repository_evidence, "list_goal_todos", lambda **_: {
+        "ok": True,
+        "todos": [
+            {"role": "agent", "status": "open", "claimed_by": "research",
+             "task_repository": "git:github.com/example/research"},
+            {"role": "agent", "status": "open", "claimed_by": "steward",
+             "task_repository": "git:github.com/example/loopx"},
+        ],
+    })
+    delegation = authority(
+        tmp_path, registry,
+        {"session_id": "manager", "channel_id": "manager"},
+        {"client_turn_id": "turn", "origin": "web", "message": "Why #42?"},
+    )
+    records = []
+    return ManagerInspection(
+        context={"snapshot_id": "fixture", "goals": [{"goal_id": "alpha"}],
+                 "context_delegation": delegation},
+        registry_path=registry, runtime_root=tmp_path, owner_scope=True,
+        scope_valid=lambda: True, record=records.append,
+    ), records
+
+
+def test_repository_artifact_gap_routes_only_by_profile_capability(monkeypatch, tmp_path):
+    tool, records = repository_artifact_inspector(tmp_path, monkeypatch)
+    result = tool.read(TOOL_NAME, {
+        "view": "repository_artifact", "goal_id": "alpha",
+        "repository_id": "git:github.com/example/loopx", "artifact_ref": "#42",
+    })
+    assert result["ok"] and result["unknown"]
+    assert result["evidence"] == {
+        "status": "unavailable",
+        "reason_code": "repository_artifact_not_available_in_core",
+        "artifact_read_status": "not_read",
+        "reviewed_artifact": False,
+        "claim_policy": "do_not_infer_artifact_facts",
+    }
+    assert result["routing"]["recommended_handoff"] == {
+        "goal_id": "alpha", "agent_id": "steward",
+    }
+    assert not result["source"]["external_read_performed"]
+    assert records == [result]
+
+
+def test_repository_artifact_gap_never_uses_sole_visible_agent_fallback(
+    monkeypatch, tmp_path
+):
+    tool, _ = repository_artifact_inspector(tmp_path, monkeypatch, profiled=False)
+    # Even one visible target cannot become an implicit receiver.
+    result = tool.read(TOOL_NAME, {
+        "view": "repository_artifact", "goal_id": "alpha",
+        "repository_id": "git:github.com/example/loopx", "artifact_ref": "42",
+    })
+    assert result["routing"]["status"] == "no_capability_matched_agent"
+    assert result["routing"]["recommended_handoff"] is None
+    assert not result["routing"]["sole_candidate_fallback_used"]
+
+
+def test_repository_artifact_scope_rejects_unbound_url_without_read(
+    monkeypatch, tmp_path
+):
+    tool, _ = repository_artifact_inspector(tmp_path, monkeypatch)
+    result = tool.read(TOOL_NAME, {
+        "view": "repository_artifact", "goal_id": "alpha",
+        "artifact_ref": "https://github.com/other/private/pull/7",
+    })
+    assert result["error"] == "repository_outside_available_goal_scope"

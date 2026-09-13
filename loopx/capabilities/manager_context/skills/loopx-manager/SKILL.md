@@ -33,6 +33,24 @@ an index, not a completed investigation. In Chat, use `loopx_manager_read`:
   Current Todo reads and historical outcomes remain useful even when live
   execution status is stale; do not present old records as newly executed work.
 
+- `repository_artifact` with a Goal ID: bind an explicit pull-request reference
+  to a credential-free repository identity already declared by the Goal or one
+  of its Core Todos. For a short `#NUMBER` reference, omit `repository_id` once
+  to discover the bounded identities, then retry only when the user's repository
+  is unambiguous. This v0 view returns reviewed Core evidence or a typed unknown;
+  it never opens arbitrary links, paths, or shell. When the evidence is unknown
+  and `routing.status=matched`, use exactly `recommended_handoff` to acquire the
+  evidence. Missing or ambiguous routing stays a typed gap; never fall back to
+  the sole visible Agent or list order.
+
+- `repository_artifact`（仓库产物）视图：将明确的 PR 引用绑定到 Goal 或其
+  Core Todo 已声明的无凭据仓库身份。短格式 `#NUMBER` 可先省略
+  `repository_id` 获取有界候选；只有用户指向的仓库唯一时才能重试。本 v0
+  视图只返回已复核的 Core 证据或类型化 unknown，不读取任意链接、路径或
+  shell。若证据未知且 `routing.status=matched`，只能使用
+  `recommended_handoff` 获取证据；路由缺失或歧义时保留类型化缺口，禁止按
+  唯一可见 Agent 或列表顺序兜底。
+
 - `handoffs`: inspect this audience's delegated requests, optionally with an exact
   `request_id` or Goal ID. Distinguish delivery, receiver CLI read, decision,
   linked current Core Todos, and evidence references. Paginate before concluding

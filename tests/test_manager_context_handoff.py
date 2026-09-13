@@ -143,6 +143,37 @@ def test_external_authority_requires_exact_sender_source_and_recipient(fixture):
     assert receipt["status"] == "delivered"
 
 
+def test_authority_projects_advisory_routing_profiles_without_widening_targets(
+    fixture,
+):
+    root, registry, session, turn, request = fixture
+    payload = json.loads(registry.read_text())
+    payload["goals"][0]["coordination"]["agent_profiles"] = {
+        "worker": {
+            "schema_version": "agent_profile_v1",
+            "agent_id": "worker",
+            "profile_role": "repository delivery",
+            "preferred_action_kinds": ["repository_*"],
+        }
+    }
+    registry.write_text(json.dumps(payload))
+    grant = authority(root, registry, session, turn)
+    assert request in grant["targets"]
+    assert {tuple(sorted(target.items())) for target in grant["targets"]} == {
+        tuple(sorted({"goal_id": "research", "agent_id": "worker"}.items())),
+        tuple(sorted({"goal_id": "other", "agent_id": "peer"}.items())),
+    }
+    assert grant["routing_profiles"] == [
+        {
+            "goal_id": "research",
+            "schema_version": "agent_profile_v1",
+            "agent_id": "worker",
+            "profile_role": "repository delivery",
+            "preferred_action_kinds": ["repository_*"],
+        }
+    ]
+
+
 def test_hook_keeps_decided_requests_open_until_receiver_returns_conclusion(
     fixture,
 ):

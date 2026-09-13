@@ -174,3 +174,36 @@ Chat receipt uniquely recovers the route. Historical timestamps stay unknown.
 Replies are immutable and additive, separate from private decision reasons and
 Core progress. Query `manager-inbox status` or `loopx_manager_read view=handoffs`
 for delivery diagnostics. These queries are not required from the user.
+
+### Repository artifact evidence fallback / 仓库产物证据回退
+
+In managed manager Chat, `loopx_manager_read view=repository_artifact` binds an
+explicit pull-request reference to a credential-free repository identity already
+declared by the authorized Goal or one of its Core Todos. The v0 implementation
+does not grant shell, arbitrary file, or unconstrained network access. Until a
+reviewed repository-evidence provider supplies the artifact, it returns
+`repository_artifact_not_available_in_core` and forbids artifact inference.
+
+The typed gap may recommend one authorized receiver only when that receiver's
+validated `agent_profile_v1.preferred_action_kinds` matches
+`repository_evidence`. No match and multiple matches remain explicit routing
+gaps. A sole visible Agent or a list position is never used as implicit
+selection. A matched handoff reuses the existing inbox, evidence
+link, immutable conclusion, and exactly-once return receipt. The web frontend
+and Lark therefore render the same Chat response and receipt; no separate UI
+configuration or state owner is introduced. `manager-inbox` remains the CLI
+readback path for the receiver and for delivery diagnostics.
+
+在托管管家对话中，`loopx_manager_read view=repository_artifact` 会把明确的
+PR 引用绑定到已授权 Goal 或其 Core Todo 声明的无凭据仓库身份。v0 不授予
+shell、任意文件读取或无限制网络访问；在受复核的仓库证据 provider 尚未提供
+产物前，它返回 `repository_artifact_not_available_in_core`，并禁止基于缺失
+产物作事实推断。
+
+只有某个已授权接收方经过校验的
+`agent_profile_v1.preferred_action_kinds` 与 `repository_evidence` 匹配时，
+类型化缺口才会推荐这一个接收方。无匹配或多匹配都会保留为明确的路由缺口；
+禁止按唯一可见 Agent 或列表位置隐式选择。匹配后的交接复用既有
+收件箱、证据链接、不可变结论与 exactly-once 回执。Web 前端与 Lark 因此渲染
+同一份 Chat 响应和回执，不新增 UI 配置或状态源；`manager-inbox` 继续作为
+接收方和交付诊断的 CLI 回读入口。
