@@ -11,7 +11,8 @@ import shlex
 import tempfile
 from typing import Any
 
-from ...agent_registry import registered_agent_ids_for_goal
+from ...agent_registry import agent_profile_for_goal, registered_agent_ids_for_goal
+from ...control_plane.agents.profile import normalize_agent_profile
 from ...file_lock import exclusive_file_lock
 from ...history import load_registry
 
@@ -141,9 +142,25 @@ def authority(
     targets = [
         {"goal_id": g, "agent_id": a} for g, a in sorted(allowed & set(available))
     ]
+    routing_profiles = []
+    for target in targets:
+        goal = available[(target["goal_id"], target["agent_id"])]
+        raw_profile = agent_profile_for_goal(goal, target["agent_id"])
+        if raw_profile is None:
+            continue
+        try:
+            profile = normalize_agent_profile(
+                raw_profile,
+                registered_agents=registered_agent_ids_for_goal(goal),
+                expected_agent_id=target["agent_id"],
+            )
+        except ValueError:
+            continue
+        routing_profiles.append({"goal_id": target["goal_id"], **profile})
     return {
         "mode": "context_only",
         "targets": targets,
+        "routing_profiles": routing_profiles,
         "source_id": source_id,
         "instruction": INSTRUCTION,
     }

@@ -17,7 +17,7 @@ READ_TOOL = {
     "name": TOOL_NAME,
     "description": (
         "Read authorized LoopX Core evidence on demand: the global Goal portfolio, "
-        "one Goal's current Todos, recorded deliveries, or handoff receipt status. Use concrete evidence "
+        "one Goal's current Todos, recorded deliveries, repository-artifact evidence gaps, or handoff receipt status. Use concrete evidence "
         "to answer progress and priority questions. Paginate with next_offset. "
         "No shell, writes, raw files, or additional Goal authorization."
     ),
@@ -27,7 +27,7 @@ READ_TOOL = {
         "properties": {
             "view": {
                 "type": "string",
-                "enum": ["sources", "portfolio", "todos", "deliveries", "handoffs"],
+                "enum": ["sources", "portfolio", "todos", "deliveries", "repository_artifact", "handoffs"],
             },
             "source_id": {"type": "string", "description": "Default local. For SSH use an exact source_id from view=sources; local Goal IDs do not discover remote Goals."},
             "days": {"type": "integer", "minimum": 1, "maximum": 90, "description": "Deliveries lookback; expand for latest known progress older than yesterday."},
@@ -36,6 +36,14 @@ READ_TOOL = {
                 "type": "string",
                 "pattern": "^[a-f0-9]{64}$",
                 "description": "Handoffs only: exact request receipt ID.",
+            },
+            "repository_id": {
+                "type": "string",
+                "description": "Repository-artifact only: exact credential-free git:<host>/<owner>/<repo> identity. Omit once to discover available identities for a short PR reference.",
+            },
+            "artifact_ref": {
+                "type": "string",
+                "description": "Repository-artifact only: #NUMBER, NUMBER, or an exact HTTPS pull-request URL.",
             },
             "include_stopped": {
                 "type": "boolean",
@@ -120,14 +128,18 @@ class ManagerInspection:
             "request_id",
             "source_id",
             "days",
+            "repository_id",
+            "artifact_ref",
         }:
             return {"ok": False, "error": "invalid_arguments"}
         view, goal_id = arguments.get("view"), arguments.get("goal_id")
         offset, limit = arguments.get("offset", 0), arguments.get("limit", 8)
         include_stopped = arguments.get("include_stopped", False)
         if (
-            view not in {"sources", "portfolio", "todos", "deliveries", "handoffs"}
+            view not in {"sources", "portfolio", "todos", "deliveries", "repository_artifact", "handoffs"}
             or ("request_id" in arguments and view != "handoffs")
+            or ("repository_id" in arguments and view != "repository_artifact")
+            or ("artifact_ref" in arguments and view != "repository_artifact")
             or type(include_stopped) is not bool
             or ("include_stopped" in arguments and view != "portfolio")
             or type(offset) is not int
@@ -137,6 +149,18 @@ class ManagerInspection:
             or (goal_id is not None and not isinstance(goal_id, str))
             or ("days" in arguments and (view != "deliveries" or type(arguments["days"]) is not int or not 1 <= arguments["days"] <= 90))
             or not isinstance(arguments.get("source_id", "local"), str)
+            or (
+                view == "repository_artifact"
+                and (
+                    not isinstance(arguments.get("artifact_ref"), str)
+                    or not arguments.get("artifact_ref", "").strip()
+                    or len(arguments.get("artifact_ref", "")) > 500
+                    or (
+                        "repository_id" in arguments
+                        and not isinstance(arguments.get("repository_id"), str)
+                    )
+                )
+            )
         ):
             return {"ok": False, "error": "invalid_arguments"}
         if not self.scope_valid():
@@ -152,7 +176,7 @@ class ManagerInspection:
             self.record(result)
             return result
         if source_id != "local":
-            if not source_id.startswith("ssh:") or view == "handoffs" or (view != "portfolio" and not goal_id):
+            if not source_id.startswith("ssh:") or view in {"handoffs", "repository_artifact"} or (view != "portfolio" and not goal_id):
                 return {"ok": False, "error": "invalid_remote_read"}
             from .ssh_evidence import read_remote
             result = read_remote(self.runtime_root, self.channel_id, self.owner_scope, arguments,
@@ -167,6 +191,20 @@ class ManagerInspection:
             return {"ok": False, "error": "goal_outside_available_scope"}
         if not self.scope_valid():
             return {"ok": False, "error": "authorization_changed"}
+        if view == "repository_artifact":
+            from .repository_evidence import inspect_repository_artifact
+            result = inspect_repository_artifact(
+                registry_path=self.registry_path,
+                runtime_root=self.runtime_root,
+                goal_id=goal_id,
+                artifact_ref=arguments["artifact_ref"].strip(),
+                repository_id=(arguments.get("repository_id", "").strip() or None),
+                context_delegation=self.context.get("context_delegation"),
+            )
+            if not self.scope_valid():
+                return {"ok": False, "error": "authorization_changed"}
+            self.record(result)
+            return result
         if view == "portfolio":
             rows = list(goals.values()) if goal_id is None else [goals[goal_id]]
             if goal_id is None and not include_stopped:

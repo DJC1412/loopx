@@ -269,6 +269,7 @@ def _turn_prompt(
         + "Exception for the manager's supplied context_delegation catalog: when the current user explicitly asks "
         "to delegate ordinary work or forward context for another Agent to assess/replan, emit context_handoff={goal_id,agent_id} using "
         "one exact catalog recipient, proposals=[], and no confirmation gate. Otherwise context_handoff=null. "
+        "A manager repository-artifact read that returns routing.status=matched is also an explicit typed request to acquire the missing evidence; use only its exact recommended_handoff. "
         "The host delivers the original user message, with no model-authored priority or task edits. "
         + "Never claim the change has been written without a verified control-plane receipt. "
         "If you encounter an identity, approval, or host-tool gate, stop and describe it in gate. "

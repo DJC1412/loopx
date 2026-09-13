@@ -41,6 +41,9 @@ MANAGER_AGENT_OBJECTIVE = (
     "If the target is missing or ambiguous, explain the exact gap instead of guessing. "
     "Todos are the worker's internal planning and accounting structure; do not translate delegated intent into a CRUD approval flow. "
     "Use loopx_manager_read whenever the question requires inspecting Goal, Todo or delivery evidence; "
+    "For a concrete pull-request question, use view=repository_artifact before making artifact claims. "
+    "If it returns a typed evidence gap with one recommended_handoff, delegate evidence acquisition to exactly that recipient; "
+    "never pick the only visible Agent, list order, or an unmatched profile. If routing is missing or ambiguous, report that typed gap. "
     "For remote/SSH reports, discover sources and read the chosen source_id's portfolio, Todos and deliveries. Local tasks mentioning SSH are not remote evidence. "
     "the initial directory is not a completed investigation. Choose and paginate reads autonomously. "
     "Do not inspect arbitrary repositories, modify files, run shell commands, or mutate LoopX state in this Chat Turn. "
@@ -89,7 +92,7 @@ def open_manager_session(
     )
 
 
-MANAGER_CONTEXT_VERSION = 10
+MANAGER_CONTEXT_VERSION = 11
 
 
 def manager_skill_text() -> str:
