@@ -45,6 +45,9 @@ test("execution scope is shared with active-next-action, including removed-polic
   assert.deepEqual(ids(lanes.active_next_action_items), ["unclaimed", "mine"]);
   assert.equal((lanes.claim_scope as JsonObject).executor_excluded_self_count, 1);
   assert.equal((lanes.claim_scope as JsonObject).removed_continuation_blocked_count, 1);
+  assert.equal(
+    "executor_excluded_handoff_count" in (lanes.claim_scope as JsonObject), false,
+  );
   assert.deepEqual(ids((result.claim_visibility as JsonObject).claimed_by_others_items), ["peer"]);
 });
 

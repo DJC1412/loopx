@@ -103,6 +103,10 @@ function handoffDispatchScope(source: readonly Row[], agent: string,
   const candidates = source.filter(row => !row.claim && row.actionable && !row.removed &&
     row.taskClass === "advancement_task" && row.excluded.includes(agent) &&
     row.payload.continuation_policy === "independent_handoff");
+  // Keep the ordinary quota hot path byte-for-byte compact. Handoff
+  // diagnostics only belong in the claim scope when there is actually an
+  // executor-excluded handoff to route or fail closed.
+  if (!candidates.length) return {};
   const projected = candidates.map(row => {
     const eligiblePeerIds = registeredAgents.filter(peer => peer !== agent && !row.excluded.includes(peer));
     return {...row.display, eligible_peer_ids: eligiblePeerIds};
