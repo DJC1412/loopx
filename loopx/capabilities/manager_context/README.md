@@ -175,35 +175,55 @@ Replies are immutable and additive, separate from private decision reasons and
 Core progress. Query `manager-inbox status` or `loopx_manager_read view=handoffs`
 for delivery diagnostics. These queries are not required from the user.
 
-### Repository artifact evidence fallback / 仓库产物证据回退
+### Repository artifact evidence / 仓库产物证据
 
 In managed manager Chat, `loopx_manager_read view=repository_artifact` binds an
 explicit pull-request reference to a credential-free repository identity already
-declared by the authorized Goal or one of its Core Todos. The v0 implementation
-does not grant shell, arbitrary file, or unconstrained network access. Until a
-reviewed repository-evidence provider supplies the artifact, it returns
-`repository_artifact_not_available_in_core` and forbids artifact inference.
+declared by the authorized Goal or one of its Core Todos. It reads the GitHub
+artifact through fixed, read-only semantic operations. Start with `overview`,
+then pass the returned `head_sha` as `expected_head_sha` while paginating only
+the needed `files`, `diff`, `reviews`, `issue_comments`, `review_comments`,
+`checks`, or `source_file`. Source files accept only repository-relative paths
+and are pinned to the current PR head or base commit. A head change stops the
+read instead of mixing revisions.
 
-The typed gap may recommend one authorized receiver only when that receiver's
-validated `agent_profile_v1.preferred_action_kinds` matches
-`repository_evidence`. No match and multiple matches remain explicit routing
-gaps. A sole visible Agent or a list position is never used as implicit
-selection. A matched handoff reuses the existing inbox, evidence
-link, immutable conclusion, and exactly-once return receipt. The web frontend
-and Lark therefore render the same Chat response and receipt; no separate UI
-configuration or state owner is introduced. `manager-inbox` remains the CLI
-readback path for the receiver and for delivery diagnostics.
+The provider never grants shell, arbitrary CLI arguments, writes, or local file
+access. Permission, credentials, network, rate-limit, not-found, head-change and
+truncation outcomes remain distinct typed evidence. A read failure does not
+automatically create work or hand off the question. For an explicit
+implementation, execution-validation or extended-investigation request, the
+typed gap may recommend one authorized receiver only when its validated
+`agent_profile_v1.preferred_action_kinds` matches `repository_evidence` and a
+current Core Todo binds that Agent to the same repository. No match and multiple
+matches remain explicit routing gaps; a sole visible Agent or list position is
+never an implicit receiver.
+
+The managed Turn, web frontend and Lark render the same Chat tool result. The
+local CLI exposes the same projection, for example:
+
+```text
+loopx goal-portfolio --manager-view repository_artifact --goal-id <goal> \
+  --repository-id git:github.com/<owner>/<repo> --artifact-ref '#42'
+```
+
+No separate UI configuration or state owner is introduced. `manager-inbox`
+remains the CLI readback path for an actual handoff and its delivery diagnostics.
 
 在托管管家对话中，`loopx_manager_read view=repository_artifact` 会把明确的
-PR 引用绑定到已授权 Goal 或其 Core Todo 声明的无凭据仓库身份。v0 不授予
-shell、任意文件读取或无限制网络访问；在受复核的仓库证据 provider 尚未提供
-产物前，它返回 `repository_artifact_not_available_in_core`，并禁止基于缺失
-产物作事实推断。
+PR 引用绑定到已授权 Goal 或其 Core Todo 声明的无凭据仓库身份，并通过固定、
+只读的语义操作读取 GitHub 原件。先读 `overview`，再把返回的 `head_sha` 作为
+`expected_head_sha`，按需分页读取 `files`、`diff`、`reviews`、两类评论、检查
+或 `source_file`。源码只接受仓库相对路径，并固定到当前 PR 的 head 或 base
+commit；head 变化会中止读取，禁止混用不同版本证据。
 
-只有某个已授权接收方经过校验的
-`agent_profile_v1.preferred_action_kinds` 与 `repository_evidence` 匹配时，
-类型化缺口才会推荐这一个接收方。无匹配或多匹配都会保留为明确的路由缺口；
-禁止按唯一可见 Agent 或列表位置隐式选择。匹配后的交接复用既有
-收件箱、证据链接、不可变结论与 exactly-once 回执。Web 前端与 Lark 因此渲染
-同一份 Chat 响应和回执，不新增 UI 配置或状态源；`manager-inbox` 继续作为
-接收方和交付诊断的 CLI 回读入口。
+provider 不授予 shell、任意 CLI 参数、写权限或本地文件访问；权限、凭据、
+网络、限流、未找到、head 变化和截断分别返回类型化证据。读取失败不会自动
+创建任务或交接。只有用户明确要求实施、执行验证或较长调查，并且某个已授权
+接收方的 `agent_profile_v1.preferred_action_kinds` 与
+`repository_evidence` 匹配，并且当前 Core Todo 把该 Agent 绑定到同一仓库时，
+才可推荐该接收方。无匹配或多匹配都会保留为明确缺口，禁止按唯一可见 Agent
+或列表位置猜测。
+
+托管 Turn、Web 前端和 Lark 渲染同一份 Chat 工具结果；本地 CLI 暴露同一投影，
+不新增 UI 配置或状态源。真正发生交接时，仍复用既有收件箱、不可变结论和
+exactly-once 回执，`manager-inbox` 继续作为接收方与交付诊断的 CLI 回读入口。

@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
+import re
 from typing import Any
 
 from ...chat_manager_details import read_manager_goal_details
 from ...chat_manager_history import read_manager_delivery_history
+from .repository_evidence_github import RepositoryEvidenceReader
 
 
 TOOL_NAME = "loopx_manager_read"
@@ -17,9 +19,9 @@ READ_TOOL = {
     "name": TOOL_NAME,
     "description": (
         "Read authorized LoopX Core evidence on demand: the global Goal portfolio, "
-        "one Goal's current Todos, recorded deliveries, repository-artifact evidence gaps, or handoff receipt status. Use concrete evidence "
+        "one Goal's current Todos, recorded deliveries, revision-pinned repository artifacts, or handoff receipt status. Use concrete evidence "
         "to answer progress and priority questions. Paginate with next_offset. "
-        "No shell, writes, raw files, or additional Goal authorization."
+        "No shell, writes, local files, or additional Goal authorization."
     ),
     "inputSchema": {
         "type": "object",
@@ -45,6 +47,26 @@ READ_TOOL = {
                 "type": "string",
                 "description": "Repository-artifact only: #NUMBER, NUMBER, or an exact HTTPS pull-request URL.",
             },
+            "artifact_section": {
+                "type": "string",
+                "enum": ["overview", "files", "diff", "reviews", "issue_comments", "review_comments", "checks", "source_file"],
+                "description": "Repository-artifact only. Read overview first, then pass its exact head SHA for deeper sections.",
+            },
+            "expected_head_sha": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$",
+                "description": "Repository-artifact follow-up only: exact head SHA returned by overview, preventing mixed-revision evidence.",
+            },
+            "source_path": {
+                "type": "string", "maxLength": 500,
+                "description": "Source-file only: repository-relative path at the PR head or base revision.",
+            },
+            "source_ref": {
+                "type": "string", "enum": ["head", "base"],
+                "description": "Source-file only: select the current PR head or base commit.",
+            },
+            "source_line_start": {"type": "integer", "minimum": 1, "maximum": 1000000},
+            "source_line_limit": {"type": "integer", "minimum": 1, "maximum": 200},
             "include_stopped": {
                 "type": "boolean",
                 "description": "Portfolio only: include stopped Goals for an explicit historical question.",
@@ -55,6 +77,46 @@ READ_TOOL = {
         "required": ["view"],
     },
 }
+
+_REPOSITORY_SECTIONS = {
+    "overview", "files", "diff", "reviews", "issue_comments",
+    "review_comments", "checks", "source_file",
+}
+
+
+def _repository_arguments_valid(arguments: dict[str, Any]) -> bool:
+    artifact_ref = arguments.get("artifact_ref")
+    section = arguments.get("artifact_section", "overview")
+    source_ref = arguments.get("source_ref", "head")
+    expected_head = arguments.get("expected_head_sha")
+    source_path = arguments.get("source_path")
+    line_start = arguments.get("source_line_start", 1)
+    line_limit = arguments.get("source_line_limit", 120)
+    offset = arguments.get("offset", 0)
+    if (
+        not isinstance(artifact_ref, str) or not artifact_ref.strip()
+        or len(artifact_ref) > 500
+        or ("repository_id" in arguments and not isinstance(arguments.get("repository_id"), str))
+        or not isinstance(section, str) or section not in _REPOSITORY_SECTIONS
+        or not isinstance(source_ref, str) or source_ref not in {"head", "base"}
+        or type(line_start) is not int or not 1 <= line_start <= 1_000_000
+        or type(line_limit) is not int or not 1 <= line_limit <= 200
+        or type(offset) is not int or not 0 <= offset <= 10_000
+    ):
+        return False
+    if "expected_head_sha" in arguments and (
+        not isinstance(expected_head, str)
+        or re.fullmatch(r"[0-9a-f]{40}", expected_head) is None
+    ):
+        return False
+    if "source_path" in arguments and (
+        not isinstance(source_path, str) or not source_path or len(source_path) > 500
+    ):
+        return False
+    source_only = {"source_path", "source_ref", "source_line_start", "source_line_limit"}
+    if section == "source_file":
+        return "source_path" in arguments
+    return not any(key in arguments for key in source_only)
 
 
 def manager_index(context: dict[str, Any]) -> dict[str, Any]:
@@ -99,8 +161,9 @@ class ManagerInspection:
         scope_valid: Callable[[], bool],
         record: Callable[[dict[str, Any]], None],
         channel_id: str | None = None,
-        remote_runner=None,
-        ssh_config_path=None,
+        remote_runner: Any = None,
+        ssh_config_path: Path | None = None,
+        repository_reader: RepositoryEvidenceReader | None = None,
     ) -> None:
         self.context = context
         self.registry_path = registry_path
@@ -111,6 +174,7 @@ class ManagerInspection:
         self.channel_id = channel_id
         self.remote_runner = remote_runner
         self.ssh_config_path = ssh_config_path
+        self.repository_reader = repository_reader
 
     def sources(self):
         from .ssh_evidence import sources
@@ -130,6 +194,12 @@ class ManagerInspection:
             "days",
             "repository_id",
             "artifact_ref",
+            "artifact_section",
+            "expected_head_sha",
+            "source_path",
+            "source_ref",
+            "source_line_start",
+            "source_line_limit",
         }:
             return {"ok": False, "error": "invalid_arguments"}
         view, goal_id = arguments.get("view"), arguments.get("goal_id")
@@ -140,6 +210,10 @@ class ManagerInspection:
             or ("request_id" in arguments and view != "handoffs")
             or ("repository_id" in arguments and view != "repository_artifact")
             or ("artifact_ref" in arguments and view != "repository_artifact")
+            or any(key in arguments and view != "repository_artifact" for key in {
+                "artifact_section", "expected_head_sha", "source_path", "source_ref",
+                "source_line_start", "source_line_limit",
+            })
             or type(include_stopped) is not bool
             or ("include_stopped" in arguments and view != "portfolio")
             or type(offset) is not int
@@ -149,18 +223,7 @@ class ManagerInspection:
             or (goal_id is not None and not isinstance(goal_id, str))
             or ("days" in arguments and (view != "deliveries" or type(arguments["days"]) is not int or not 1 <= arguments["days"] <= 90))
             or not isinstance(arguments.get("source_id", "local"), str)
-            or (
-                view == "repository_artifact"
-                and (
-                    not isinstance(arguments.get("artifact_ref"), str)
-                    or not arguments.get("artifact_ref", "").strip()
-                    or len(arguments.get("artifact_ref", "")) > 500
-                    or (
-                        "repository_id" in arguments
-                        and not isinstance(arguments.get("repository_id"), str)
-                    )
-                )
-            )
+            or (view == "repository_artifact" and not _repository_arguments_valid(arguments))
         ):
             return {"ok": False, "error": "invalid_arguments"}
         if not self.scope_valid():
@@ -193,6 +256,7 @@ class ManagerInspection:
             return {"ok": False, "error": "authorization_changed"}
         if view == "repository_artifact":
             from .repository_evidence import inspect_repository_artifact
+            assert isinstance(goal_id, str) and goal_id
             result = inspect_repository_artifact(
                 registry_path=self.registry_path,
                 runtime_root=self.runtime_root,
@@ -200,6 +264,15 @@ class ManagerInspection:
                 artifact_ref=arguments["artifact_ref"].strip(),
                 repository_id=(arguments.get("repository_id", "").strip() or None),
                 context_delegation=self.context.get("context_delegation"),
+                section=arguments.get("artifact_section", "overview"),
+                offset=offset,
+                limit=limit,
+                expected_head_sha=arguments.get("expected_head_sha"),
+                source_path=arguments.get("source_path"),
+                source_ref=arguments.get("source_ref", "head"),
+                source_line_start=arguments.get("source_line_start", 1),
+                source_line_limit=arguments.get("source_line_limit", 120),
+                reader=self.repository_reader,
             )
             if not self.scope_valid():
                 return {"ok": False, "error": "authorization_changed"}

@@ -41,6 +41,25 @@ def export_page(registry_path, runtime_root_arg, args):
         query["goal_id"] = ids[0]
     if args.manager_view == "deliveries":
         query["days"] = args.days
+    if args.manager_view == "repository_artifact":
+        query.update(
+            artifact_ref=getattr(args, "artifact_ref", None),
+            artifact_section=getattr(args, "artifact_section", "overview"),
+        )
+        for argument, key in (
+            ("repository_id", "repository_id"),
+            ("expected_head_sha", "expected_head_sha"),
+            ("source_path", "source_path"),
+        ):
+            value = getattr(args, argument, None)
+            if value:
+                query[key] = value
+        if query["artifact_section"] == "source_file":
+            query.update(
+                source_ref=getattr(args, "source_ref", "head"),
+                source_line_start=getattr(args, "source_line_start", 1),
+                source_line_limit=getattr(args, "source_line_limit", 120),
+            )
     result = inspector.read(TOOL_NAME, query)
     for row in result.get("rows", []):
         row.setdefault("goal_id", query.get("goal_id"))

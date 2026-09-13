@@ -14,9 +14,13 @@ from ...repository_identity import (
     resolve_project_identity,
 )
 from ...todos import list_goal_todos
+from .repository_evidence_github import (
+    RepositoryEvidenceError,
+    RepositoryEvidenceReader,
+)
 
 
-SCHEMA_VERSION = "manager_repository_evidence_v0"
+SCHEMA_VERSION = "manager_repository_evidence_v1"
 ROUTING_ACTION_KIND = "repository_evidence"
 _PR_PATH = re.compile(
     r"^/(?P<repository>[A-Za-z0-9._~+/-]+)/pull/(?P<number>[1-9][0-9]*)/?$"
@@ -49,14 +53,15 @@ def _repository_bindings(
     registry_path: Path,
     runtime_root: Path,
     goal_id: str,
-) -> tuple[list[str], bool]:
+) -> tuple[list[str], bool, dict[str, list[str]]]:
     try:
         goal = _goal(registry_path, goal_id)
     except (OSError, ValueError, KeyError, TypeError):
-        return [], False
+        return [], False, {}
     if goal is None:
-        return [], False
+        return [], False, {}
     repositories: set[str] = set()
+    responsible_agents: dict[str, set[str]] = {}
     project = str(goal.get("repo") or "").strip()
     if project:
         try:
@@ -84,10 +89,20 @@ def _repository_bindings(
             if repository is None:
                 continue
             repositories.add(repository)
+            agent_id = str(todo.get("claimed_by") or "").strip()
+            if agent_id:
+                responsible_agents.setdefault(repository, set()).add(agent_id)
         todo_authority_available = True
     except (OSError, ValueError, KeyError, TypeError, RuntimeError):
         todo_authority_available = False
-    return sorted(repositories), todo_authority_available
+    return (
+        sorted(repositories),
+        todo_authority_available,
+        {
+            repository: sorted(agent_ids)
+            for repository, agent_ids in sorted(responsible_agents.items())
+        },
+    )
 
 
 def _artifact_identity(
@@ -125,6 +140,7 @@ def _routing(
     *,
     context_delegation: Any,
     goal_id: str,
+    responsible_agent_ids: list[str],
 ) -> dict[str, Any]:
     delegation = context_delegation if isinstance(context_delegation, dict) else {}
     targets = {
@@ -140,7 +156,7 @@ def _routing(
         if not isinstance(profile, dict) or profile.get("goal_id") != goal_id:
             continue
         agent_id = str(profile.get("agent_id") or "")
-        if agent_id not in allowed_agents:
+        if agent_id not in allowed_agents or agent_id not in responsible_agent_ids:
             continue
         avoided = profile.get("avoid_action_kinds")
         if isinstance(avoided, list) and any(
@@ -157,7 +173,9 @@ def _routing(
         return {
             "status": "matched",
             "action_kind": ROUTING_ACTION_KIND,
-            "matching_basis": "agent_profile.preferred_action_kinds",
+            "matching_basis": (
+                "agent_profile.preferred_action_kinds+todo.task_repository"
+            ),
             "recommended_handoff": {
                 "goal_id": goal_id,
                 "agent_id": matched_agents[0],
@@ -170,8 +188,9 @@ def _routing(
             else "no_capability_matched_agent"
         ),
         "action_kind": ROUTING_ACTION_KIND,
-        "matching_basis": "agent_profile.preferred_action_kinds",
+        "matching_basis": "agent_profile.preferred_action_kinds+todo.task_repository",
         "matched_agent_ids": matched_agents,
+        "repository_responsible_agent_ids": sorted(responsible_agent_ids),
         "recommended_handoff": None,
         "sole_candidate_fallback_used": False,
     }
@@ -185,13 +204,17 @@ def inspect_repository_artifact(
     artifact_ref: str,
     repository_id: str | None,
     context_delegation: Any,
+    section: str = "overview",
+    offset: int = 0,
+    limit: int = 8,
+    expected_head_sha: str | None = None,
+    source_path: str | None = None,
+    source_ref: str = "head",
+    source_line_start: int = 1,
+    source_line_limit: int = 120,
+    reader: RepositoryEvidenceReader | None = None,
 ) -> dict[str, Any]:
-    """Return reviewed Core evidence or a typed, capability-routed evidence gap.
-
-    This v0 slice deliberately performs no network or arbitrary checkout read. It
-    establishes the stable artifact/repository/routing contract so an unavailable
-    artifact is never converted into an unsupported factual answer.
-    """
+    """Return scoped, revision-pinned repository evidence or a typed failure."""
 
     if repository_id is not None:
         try:
@@ -202,10 +225,12 @@ def inspect_repository_artifact(
     if artifact is None:
         return {"ok": False, "error": "invalid_or_conflicting_pull_request_ref"}
     artifact_repository, number = artifact
-    repositories, todo_authority_available = _repository_bindings(
-        registry_path=registry_path,
-        runtime_root=runtime_root,
-        goal_id=goal_id,
+    repositories, todo_authority_available, repository_responsibilities = (
+        _repository_bindings(
+            registry_path=registry_path,
+            runtime_root=runtime_root,
+            goal_id=goal_id,
+        )
     )
     if artifact_repository is None:
         if len(repositories) == 1:
@@ -241,34 +266,104 @@ def inspect_repository_artifact(
             "error": "repository_outside_available_goal_scope",
             "available_repository_ids": repositories,
         }
+    artifact_payload = {
+        "kind": "pull_request",
+        "repository_id": artifact_repository,
+        "number": number,
+        "canonical_ref": f"{artifact_repository}#pull/{number}",
+    }
+    if reader is None:
+        from .repository_evidence_github import read_github_pull_request_evidence
+
+        reader = read_github_pull_request_evidence
+    try:
+        readback = reader(
+            repository_id=artifact_repository,
+            number=number,
+            section=section,
+            offset=offset,
+            limit=limit,
+            expected_head_sha=expected_head_sha,
+            source_path=source_path,
+            source_ref=source_ref,
+            source_line_start=source_line_start,
+            source_line_limit=source_line_limit,
+        )
+    except RepositoryEvidenceError as exc:
+        reason_code = exc.reason_code
+        details = exc.details
+        routing = _routing(
+            context_delegation=context_delegation,
+            goal_id=goal_id,
+            responsible_agent_ids=repository_responsibilities.get(
+                artifact_repository, []
+            ),
+        )
+        routing["handoff_policy"] = (
+            "explicit_implementation_validation_or_extended_investigation_only"
+        )
+        return {
+            "ok": True,
+            "schema_version": SCHEMA_VERSION,
+            "view": "repository_artifact",
+            "goal_id": goal_id,
+            "artifact": artifact_payload,
+            "unknown": True,
+            "evidence": {
+                "status": "unavailable",
+                "reason_code": reason_code,
+                "artifact_read_status": "failed",
+                "source_artifact_read": False,
+                "claim_policy": "do_not_infer_artifact_facts",
+                **details,
+            },
+            "routing": routing,
+            "source": {
+                "source": SCHEMA_VERSION,
+                "repository_binding": ("goal_repository_or_core_todo_task_repository"),
+                "external_read_attempted": True,
+                "provider_contacted": reason_code
+                not in {
+                    "repository_provider_unsupported", "provider_not_installed",
+                    "invalid_provider_request", "invalid_source_path", "source_path_required",
+                },
+                "external_read_performed": False,
+                "arbitrary_path_read_performed": False,
+                "todo_authority_available": todo_authority_available,
+            },
+        }
+    if not isinstance(readback, dict):
+        return {
+            "ok": False,
+            "error": "repository_provider_contract_invalid",
+        }
     return {
         "ok": True,
         "schema_version": SCHEMA_VERSION,
         "view": "repository_artifact",
         "goal_id": goal_id,
-        "artifact": {
-            "kind": "pull_request",
-            "repository_id": artifact_repository,
-            "number": number,
-            "canonical_ref": f"{artifact_repository}#pull/{number}",
-        },
-        "unknown": True,
+        "artifact": artifact_payload | readback["artifact_revision"],
+        "unknown": False,
         "evidence": {
-            "status": "unavailable",
-            "reason_code": "repository_artifact_not_available_in_core",
-            "artifact_read_status": "not_read",
-            "reviewed_artifact": False,
-            "claim_policy": "do_not_infer_artifact_facts",
+            "status": "available",
+            "artifact_read_status": "read",
+            "source_artifact_read": True,
+            "section": section,
+            **readback["evidence"],
+            "coverage": readback["coverage"],
         },
-        "routing": _routing(
-            context_delegation=context_delegation,
-            goal_id=goal_id,
-        ),
+        "routing": {
+            "status": "not_needed",
+            "recommended_handoff": None,
+            "sole_candidate_fallback_used": False,
+        },
         "source": {
             "source": SCHEMA_VERSION,
             "repository_binding": "goal_repository_or_core_todo_task_repository",
-            "external_read_performed": False,
+            "external_read_attempted": True,
+            "external_read_performed": True,
             "arbitrary_path_read_performed": False,
             "todo_authority_available": todo_authority_available,
+            **readback["source"],
         },
     }

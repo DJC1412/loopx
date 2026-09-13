@@ -70,10 +70,22 @@ def register_summary_all_command(
         "goal-portfolio", help="Read scoped Goal evidence with explicit source coverage."
     )
     add_subcommand_format(portfolio)
-    portfolio.add_argument("--manager-view", choices=("portfolio", "todos", "deliveries"), help="Export an audience-safe manager evidence page from this registry.")
+    portfolio.add_argument("--manager-view", choices=("portfolio", "todos", "deliveries", "repository_artifact"), help="Export an audience-safe manager evidence page from this registry.")
     portfolio.add_argument("--offset", type=int, default=0)
     portfolio.add_argument("--days", type=int, default=1)
     portfolio.add_argument("--include-stopped", action="store_true")
+    portfolio.add_argument("--repository-id", help="Repository-artifact only: exact credential-free git:<host>/<owner>/<repo> identity.")
+    portfolio.add_argument("--artifact-ref", help="Repository-artifact only: PR number or exact HTTPS pull-request URL.")
+    portfolio.add_argument(
+        "--artifact-section",
+        choices=("overview", "files", "diff", "reviews", "issue_comments", "review_comments", "checks", "source_file"),
+        default="overview",
+    )
+    portfolio.add_argument("--expected-head-sha", help="Exact head SHA from the overview read; required for deeper artifact sections.")
+    portfolio.add_argument("--source-path", help="Source-file only: repository-relative path.")
+    portfolio.add_argument("--source-ref", choices=("head", "base"), default="head")
+    portfolio.add_argument("--source-line-start", type=int, default=1)
+    portfolio.add_argument("--source-line-limit", type=int, default=120)
     portfolio.add_argument(
         "--goal-id", action="append", dest="portfolio_goal_ids",
         help="Exact registered Goal to include; repeat to narrow scope.",
