@@ -14,6 +14,10 @@ from loopx.capabilities.manager_context import (
     register_ingress,
     turn_start_hook,
 )
+from loopx.capabilities.manager_context.agent_handoff import (
+    acknowledge_claim,
+    dispatch_from_quota_decision,
+)
 from loopx.control_plane.capability_hooks import dispatch_turn_start_hooks
 
 
@@ -187,6 +191,213 @@ def test_hook_keeps_decided_requests_open_until_receiver_returns_conclusion(
         acknowledge(
             root, "other", "peer", receipt["request_id"], "adopt", "Wrong target"
         )
+
+
+def test_agent_handoff_dispatch_is_idempotent_and_requires_canonical_claim(
+    fixture, monkeypatch
+):
+    root, registry, _session, _turn, _request = fixture
+    registry_value = json.loads(registry.read_text())
+    registry_value["goals"][0]["coordination"]["registered_agents"] = [
+        "coordinator",
+        "worker",
+    ]
+    registry.write_text(json.dumps(registry_value))
+    decision = {
+        "agent_scope_frontier": {
+            "handoff_dispatch_required": True,
+            "eligible_peer_ids": ["worker"],
+            "executor_excluded_dispatchable_items": [
+                {
+                    "todo_id": "todo_handoff",
+                    "continuation_policy": "independent_handoff",
+                    "eligible_peer_ids": ["worker"],
+                    "revision": 4,
+                }
+            ],
+        }
+    }
+    monkeypatch.setattr(
+        "loopx.capabilities.manager_context.agent_handoff.list_goal_todos",
+        lambda **_kwargs: {
+            "authority_read": {"source_authority": "canonical"},
+            "todos": [
+                {
+                    "todo_id": "todo_handoff",
+                    "status": "open",
+                    "claimed_by": None,
+                    "continuation_policy": "independent_handoff",
+                    "excluded_agents": ["coordinator"],
+                }
+            ],
+        },
+    )
+
+    first = dispatch_from_quota_decision(
+        root,
+        registry,
+        goal_id="research",
+        from_agent_id="coordinator",
+        decision=decision,
+    )
+    replay = dispatch_from_quota_decision(
+        root,
+        registry,
+        goal_id="research",
+        from_agent_id="coordinator",
+        decision=decision,
+    )
+    assert first is not None and replay is not None
+    assert first["status"] == "dispatched" and first["replayed"] is False
+    assert replay["dispatch_id"] == first["dispatch_id"]
+    assert replay["replayed"] is True
+    hook_dispatch = dispatch_turn_start_hooks(
+        [turn_start_hook(root, registry, "research", "worker")]
+    )
+    assert hook_dispatch["required_reads"][0]["ordering"] == "before_work"
+    assert hook_dispatch["results"][0]["agent_read_required"] is True
+    assert "todo_handoff" not in json.dumps(hook_dispatch)
+    inbox = pending(root, "research", "worker")
+    handoff = inbox["items"][0]
+    assert handoff["inbox_kind"] == "agent_handoff"
+    assert "todo claim" in handoff["claim_command"]
+    assert "acknowledge-handoff" in handoff["acknowledge_command"]
+    assert not pending(root, "other", "peer")["items"]
+    assert all(
+        path.stat().st_mode & 0o777 == 0o600
+        for path in (root / ".local" / "manager-context" / "agent-handoffs").rglob(
+            "*.json"
+        )
+    )
+
+    monkeypatch.setattr(
+        "loopx.capabilities.manager_context.agent_handoff.list_goal_todos",
+        lambda **_kwargs: {"todos": [{"todo_id": "todo_handoff", "claimed_by": None}]},
+    )
+    with pytest.raises(ValueError, match="must be claimed"):
+        acknowledge_claim(
+            root,
+            registry,
+            goal_id="research",
+            agent_id="worker",
+            dispatch_id=first["dispatch_id"],
+        )
+    monkeypatch.setattr(
+        "loopx.capabilities.manager_context.agent_handoff.list_goal_todos",
+        lambda **_kwargs: {
+            "todos": [{"todo_id": "todo_handoff", "claimed_by": "worker"}]
+        },
+    )
+    claimed = acknowledge_claim(
+        root,
+        registry,
+        goal_id="research",
+        agent_id="worker",
+        dispatch_id=first["dispatch_id"],
+    )
+    assert claimed["canonical_claim_verified"] is True
+    assert claimed["status"] == "claimed" and claimed["replayed"] is False
+    assert (
+        acknowledge_claim(
+            root,
+            registry,
+            goal_id="research",
+            agent_id="worker",
+            dispatch_id=first["dispatch_id"],
+        )["replayed"]
+        is True
+    )
+    assert not pending(root, "research", "worker")["items"]
+
+
+def test_agent_handoff_rejects_cross_goal_or_unregistered_source(fixture):
+    root, registry, _session, _turn, _request = fixture
+    decision = {
+        "agent_scope_frontier": {
+            "handoff_dispatch_required": True,
+            "executor_excluded_dispatchable_items": [
+                {
+                    "todo_id": "todo_handoff",
+                    "continuation_policy": "independent_handoff",
+                    "eligible_peer_ids": ["peer"],
+                }
+            ],
+        }
+    }
+    with pytest.raises(ValueError, match="source agent"):
+        dispatch_from_quota_decision(
+            root,
+            registry,
+            goal_id="research",
+            from_agent_id="coordinator",
+            decision=decision,
+        )
+    with pytest.raises(ValueError, match="no eligible registered peer"):
+        dispatch_from_quota_decision(
+            root,
+            registry,
+            goal_id="research",
+            from_agent_id="worker",
+            decision=decision,
+        )
+
+
+def test_agent_handoff_records_stale_claim_conflict(fixture, monkeypatch):
+    root, registry, _session, _turn, _request = fixture
+    registry_value = json.loads(registry.read_text())
+    registry_value["goals"][0]["coordination"]["registered_agents"] = [
+        "coordinator",
+        "worker",
+        "other-worker",
+    ]
+    registry.write_text(json.dumps(registry_value))
+    canonical = {
+        "authority_read": {"source_authority": "canonical"},
+        "todos": [
+            {
+                "todo_id": "todo_stale",
+                "status": "open",
+                "claimed_by": None,
+                "continuation_policy": "independent_handoff",
+                "excluded_agents": ["coordinator"],
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        "loopx.capabilities.manager_context.agent_handoff.list_goal_todos",
+        lambda **_kwargs: canonical,
+    )
+    receipt = dispatch_from_quota_decision(
+        root,
+        registry,
+        goal_id="research",
+        from_agent_id="coordinator",
+        decision={
+            "agent_scope_frontier": {
+                "handoff_dispatch_required": True,
+                "executor_excluded_dispatchable_items": [
+                    {
+                        "todo_id": "todo_stale",
+                        "continuation_policy": "independent_handoff",
+                        "eligible_peer_ids": ["worker"],
+                    }
+                ],
+            }
+        },
+    )
+    assert receipt is not None
+    canonical["todos"][0]["claimed_by"] = "other-worker"
+    conflict = acknowledge_claim(
+        root,
+        registry,
+        goal_id="research",
+        agent_id="worker",
+        dispatch_id=receipt["dispatch_id"],
+    )
+    assert conflict["status"] == "claim_conflict"
+    assert conflict["observed_claimed_by"] == "other-worker"
+    assert conflict["reroute_required"] is True
+    assert not pending(root, "research", "worker")["items"]
 
 
 def test_actual_manager_turn_delivers_and_reports_host_receipt(fixture, monkeypatch):

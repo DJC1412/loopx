@@ -98,8 +98,30 @@ function visibility(items: readonly Row[], agent: string | null, backlog: number
   return result;
 }
 
+function handoffDispatchScope(source: readonly Row[], agent: string,
+  registeredAgents: readonly string[], limit: number): JsonObject {
+  const candidates = source.filter(row => !row.claim && row.actionable && !row.removed &&
+    row.taskClass === "advancement_task" && row.excluded.includes(agent) &&
+    row.payload.continuation_policy === "independent_handoff");
+  const projected = candidates.map(row => {
+    const eligiblePeerIds = registeredAgents.filter(peer => peer !== agent && !row.excluded.includes(peer));
+    return {...row.display, eligible_peer_ids: eligiblePeerIds};
+  });
+  const dispatchable = projected.filter(item => (item.eligible_peer_ids as string[]).length > 0);
+  const unavailable = projected.filter(item => (item.eligible_peer_ids as string[]).length === 0);
+  return {
+    executor_excluded_handoff_count: candidates.length,
+    executor_excluded_dispatchable_count: dispatchable.length,
+    executor_excluded_dispatchable_items: dispatchable.slice(0, limit),
+    executor_excluded_no_eligible_peer_count: unavailable.length,
+    executor_excluded_no_eligible_peer_items: unavailable.slice(0, limit),
+    executor_excluded_handoff_policy:
+      "independent handoffs excluded from this executor must be activated on an eligible registered peer or fail closed as no_eligible_peer",
+  };
+}
+
 function claimScope(source: readonly Row[], selected: readonly Row[], agent: string,
-  profile: JsonObject | null, limit: number): JsonObject {
+  registeredAgents: readonly string[], profile: JsonObject | null, limit: number): JsonObject {
   const current = selected.filter(row => row.claim === agent), unclaimed = selected.filter(row => !row.claim);
   const others = source.filter(row => bucket(row, agent) === 2);
   const excluded = source.filter(row => row.excluded.includes(agent)), removed = source.filter(row => row.removed);
@@ -112,6 +134,7 @@ function claimScope(source: readonly Row[], selected: readonly Row[], agent: str
     other_agent_claimed_items: otherItems, blocked_claimed_open_count: others.length, blocked_claimed_items: otherItems,
     executor_excluded_self_count: excluded.length, executor_excluded_self_items: compact(excluded, limit),
     executor_exclusion_policy: "excluded_agents_cannot_claim_or_execute",
+    ...handoffDispatchScope(source, agent, registeredAgents, limit),
     removed_continuation_blocked_count: removed.length, removed_continuation_blocked_items: compact(removed, limit),
     removed_continuation_policy: "legacy_review_handoffs_fail_closed_until_repaired",
     ...(profile ? {profile_routing: {schema_version: "agent_profile_routing_v0", applied: true,
@@ -125,6 +148,8 @@ export function projectQuotaSelection(value: unknown): JsonObject {
   const available = request.available === undefined ? undefined : requireStringArray(request.available, "available");
   const source = rows(request.items, available), active = rows(request.active_items, available), activeExecutable = rows(request.active_executable_items, available);
   const agent = optionalNonEmptyString(request.agent_id, "agent_id");
+  const registeredAgents = request.registered_agents === undefined
+    ? [] : requireStringArray(request.registered_agents, "registered_agents");
   const userMode = requireBoolean(request.user_gate_scope, "user_gate_scope");
   const supported = requireBoolean(request.monitor_supported, "monitor_supported");
   const limit = (key: string) => {
@@ -144,7 +169,8 @@ export function projectQuotaSelection(value: unknown): JsonObject {
   const open = userMode ? blocking : blocking.filter(row => executableBy(row, agent));
   if (agent && !userMode) open.sort((a, b) => bucket(a, agent) - bucket(b, agent) ||
     a.profileRank - b.profileRank || a.priority - b.priority || a.index - b.index);
-  const scope = agent && !userMode ? claimScope(blocking, open, agent, profile, diagnostic) : null;
+  const scope = agent && !userMode
+    ? claimScope(blocking, open, agent, registeredAgents, profile, diagnostic) : null;
   const monitors = open.filter(row => row.actionable && row.taskClass === "continuous_monitor");
   const due = supported ? monitors.filter(row => row.due && executableBy(row, agent)) : [];
   const activeVisible = (row: Row) => userMode ? (row.gate ? gateApplies(row, agent) : actionApplies(row, agent)) : executableBy(row, agent);

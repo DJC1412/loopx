@@ -261,7 +261,9 @@ def test_turn_envelope_preserves_action_boundary_and_writeback() -> None:
     )
 
 
-def test_turn_envelope_compacts_replan_help_without_losing_successor_execution() -> None:
+def test_turn_envelope_compacts_replan_help_without_losing_successor_execution() -> (
+    None
+):
     source = _full_decision()
     successor_command = (
         "loopx todo add --goal-id fixture-goal --role agent "
@@ -438,9 +440,9 @@ def test_turn_envelope_preserves_signed_adaptive_orchestration_contract() -> Non
 
     envelope = build_turn_envelope(source)
 
-    assert envelope["task_orchestration_contract"] == source[
-        "task_orchestration_contract"
-    ]
+    assert (
+        envelope["task_orchestration_contract"] == source["task_orchestration_contract"]
+    )
     assert envelope["action_signature"]["matches"] is True
     assert quota_action_signature_document(
         source
@@ -457,7 +459,7 @@ def test_three_long_child_briefs_stay_within_turn_envelope_budget() -> None:
             "action_kind": "implement",
             "task_domain": "code",
             "text": "Implement the primary slice.",
-                "required_write_scopes": ["loopx/**"],
+            "required_write_scopes": ["loopx/**"],
         },
         *[
             {
@@ -481,7 +483,7 @@ def test_three_long_child_briefs_stay_within_turn_envelope_budget() -> None:
                 "spawn_allowed": True,
                 "max_children": 3,
                 "allowed_domains": ["code", "validation"],
-            }
+            },
         },
         agent_identity={
             "agent_id": "codex-fixture",
@@ -582,13 +584,9 @@ def test_turn_envelope_full_decision_compacts_first_class_profiles(
 
 
 def test_turn_envelope_unbound_full_decision_is_not_executable() -> None:
-    full_decision = build_turn_envelope(_full_decision())["detail_ref"][
-        "full_decision"
-    ]
+    full_decision = build_turn_envelope(_full_decision())["detail_ref"]["full_decision"]
 
-    assert full_decision == (
-        "rerun the typed quota_guard from the current host packet"
-    )
+    assert full_decision == ("rerun the typed quota_guard from the current host packet")
     assert "quota should-run" not in full_decision
 
 
@@ -830,9 +828,7 @@ def test_action_signature_detects_semantic_drift() -> None:
     ) != turn_envelope_action_signature_document(envelope)
 
     envelope = build_turn_envelope(source)
-    envelope["action"]["selected_todo"]["continuation_policy"] = (
-        "independent_handoff"
-    )
+    envelope["action"]["selected_todo"]["continuation_policy"] = "independent_handoff"
 
     assert quota_action_signature_document(
         source
@@ -920,8 +916,21 @@ def test_contract_capsule_stays_bounded_with_replan_and_vision_contracts() -> No
         "blocks_delivery": True,
         "quiet_noop_allowed": False,
         "requires_replan": True,
+        "handoff_dispatch_required": True,
+        "handoff_dispatch_state": "dispatchable",
+        "eligible_peer_ids": ["codex-peer"],
         "recommended_action": "write a concrete successor before quiet wait " * 20,
         "spend_policy": "spend only after successor writeback " * 20,
+    }
+    source["agent_handoff_dispatch_receipt"] = {
+        "schema_version": "loopx_agent_handoff_dispatch_receipt_v0",
+        "dispatch_id": "a" * 64,
+        "goal_id": "fixture-goal",
+        "todo_id": "todo_fixture",
+        "from_agent_id": "codex-fixture",
+        "to_agent_id": "codex-peer",
+        "status": "dispatched",
+        "replayed": False,
     }
     source["vision_continuation_audit"] = {
         "schema_version": "vision_continuation_audit_v0",
@@ -944,6 +953,14 @@ def test_contract_capsule_stays_bounded_with_replan_and_vision_contracts() -> No
     assert envelope["contract_capsule"]["autonomous_replan_scope"]["applies"] is True
     assert (
         envelope["contract_capsule"]["agent_scope_frontier"]["requires_replan"] is True
+    )
+    assert (
+        envelope["contract_capsule"]["agent_scope_frontier"]["handoff_dispatch_state"]
+        == "dispatchable"
+    )
+    assert (
+        envelope["contract_capsule"]["agent_handoff_dispatch_receipt"]["status"]
+        == "dispatched"
     )
     assert envelope["contract_capsule"]["vision_continuation_audit"]["required"] is True
     assert envelope["compaction"]["within_budget"] is True

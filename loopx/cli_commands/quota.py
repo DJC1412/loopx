@@ -45,7 +45,9 @@ from ..control_plane.quota.turn_envelope import build_turn_envelope
 from ..control_plane.coordination.legacy_writer_fence import (
     LegacyCoordinationWriterFenced,
 )
-from ..control_plane.coordination.local_authority import LocalCoordinationAuthorityUnavailable
+from ..control_plane.coordination.local_authority import (
+    LocalCoordinationAuthorityUnavailable,
+)
 from ..control_plane.effect_runtime import EffectRuntimeRejected
 from ..control_plane.scheduler.execution_context import (
     GUIDED_START_TURN_RUNTIME_PROFILES,
@@ -246,7 +248,9 @@ def _quota_failure_payload(
         )
         if error.agent_id is not None:
             payload["agent_id"] = error.agent_id
-    elif isinstance(error, (LegacyCoordinationWriterFenced, LocalCoordinationAuthorityUnavailable)):
+    elif isinstance(
+        error, (LegacyCoordinationWriterFenced, LocalCoordinationAuthorityUnavailable)
+    ):
         payload.update(
             {
                 "error_code": error.code,
@@ -471,11 +475,13 @@ def _dispatch_quota_turn_start_hooks(
         from ..control_plane.agents.capability_memory import (
             extend_turn_start_dispatch as extend_capability_memory_dispatch,
         )
-        from ..capabilities.manager_context import turn_start_hook
-        from ..control_plane.capability_hooks import dispatch_turn_start_hooks
+        from ..capabilities.manager_context import extend_turn_start_dispatch
         from ..history import load_registry
         from ..paths import resolve_runtime_root
-        root = resolve_runtime_root(load_registry(registry_path), runtime_root_arg, registry_path=registry_path)
+
+        root = resolve_runtime_root(
+            load_registry(registry_path), runtime_root_arg, registry_path=registry_path
+        )
         dispatch = extend_capability_memory_dispatch(
             dispatch,
             registry_path=registry_path,
@@ -484,15 +490,25 @@ def _dispatch_quota_turn_start_hooks(
             agent_id=args.agent_id,
             available=args.available_capabilities,
         )
-        context_dispatch = dispatch_turn_start_hooks((turn_start_hook(root, registry_path, args.goal_id, args.agent_id),))
-        dispatch = dict(dispatch)
-        for key in ("results", "required_reads", "failures"):
-            dispatch[key] = list(dispatch.get(key) or []) + list(context_dispatch.get(key) or [])
-        for key in ("registered_count", "invoked_count"):
-            dispatch[key] = int(dispatch.get(key) or 0) + int(context_dispatch.get(key) or 0)
-        from ..capabilities.periodic_report.cadence_runtime import extend_cadence_turn_start_dispatch
-        dispatch = extend_cadence_turn_start_dispatch(dispatch, registry_path=registry_path,
-            runtime_root=root, goal_id=args.goal_id, agent_id=args.agent_id)
+        dispatch = extend_turn_start_dispatch(
+            dispatch,
+            registry_path=registry_path,
+            runtime_root=root,
+            goal_id=args.goal_id,
+            agent_id=args.agent_id,
+        )
+
+        from ..capabilities.periodic_report.cadence_runtime import (
+            extend_cadence_turn_start_dispatch,
+        )
+
+        dispatch = extend_cadence_turn_start_dispatch(
+            dispatch,
+            registry_path=registry_path,
+            runtime_root=root,
+            goal_id=args.goal_id,
+            agent_id=args.agent_id,
+        )
     local_private_state_mutated = any(
         isinstance(result, Mapping)
         and result.get("local_private_state_mutated") is True
@@ -507,7 +523,6 @@ def _attach_turn_start_hook_dispatch(
 ) -> None:
     if dispatch and (dispatch.get("registered_count") or dispatch.get("failures")):
         payload["turn_start_capability_hook_dispatch"] = dict(dispatch)
-
 
 
 def _render_turn_envelope_payload(
@@ -530,6 +545,7 @@ def _render_turn_envelope_payload(
         degraded = dict(payload)
         degraded["turn_envelope_skipped"] = str(envelope_error)[:200]
         return degraded
+
 
 def handle_quota_command(
     args: argparse.Namespace,
@@ -734,6 +750,20 @@ def handle_quota_command(
                     else:
                         heartbeat_stall_observation = "not_applicable"
                     heartbeat_receipt_ready = True
+            if args.agent_id:
+                from ..capabilities.manager_context.agent_handoff import (
+                    dispatch_from_quota_decision,
+                )
+
+                handoff_receipt = dispatch_from_quota_decision(
+                    runtime_root,
+                    registry_path,
+                    goal_id=args.goal_id,
+                    from_agent_id=args.agent_id,
+                    decision=payload,
+                )
+                if handoff_receipt is not None:
+                    payload["agent_handoff_dispatch_receipt"] = handoff_receipt
         elif args.quota_command == "monitor-poll":
             payload = record_quota_monitor_poll_for_cli(
                 args,

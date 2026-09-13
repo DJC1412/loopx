@@ -14,11 +14,16 @@ from ..capabilities.explore.composition_frontier import (
 from ..capabilities.agent_turn_recall import (
     run_configured_agent_turn_recall_fail_open,
 )
+from ..capabilities.manager_context import extend_turn_start_dispatch
 from ..capabilities.reward_memory import (
     run_configured_turn_outcome_ingest_fail_open,
 )
-from ..capabilities.periodic_report.cadence_runtime import extend_cadence_turn_start_dispatch
-from ..capabilities.periodic_report.pending_intent import periodic_report_pending_intent_interaction_hook
+from ..capabilities.periodic_report.cadence_runtime import (
+    extend_cadence_turn_start_dispatch,
+)
+from ..capabilities.periodic_report.pending_intent import (
+    periodic_report_pending_intent_interaction_hook,
+)
 from ..control_plane.quota.live_decision import build_live_quota_should_run_decision
 from ..control_plane.quota.heartbeat_receipt import (
     ensure_turn_heartbeat_settlement_receipt,
@@ -86,8 +91,6 @@ PrintPayload = Callable[
 FormatSelector = Callable[..., str]
 
 
-
-
 def handle_turn_command(
     args: argparse.Namespace,
     *,
@@ -125,9 +128,20 @@ def handle_turn_command(
                 goal_id=args.goal_id,
                 agent_id=args.agent_id,
             )
+            turn_start_hook_dispatch = extend_turn_start_dispatch(
+                turn_start_hook_dispatch,
+                registry_path=registry_path,
+                runtime_root=runtime_root,
+                goal_id=args.goal_id,
+                agent_id=args.agent_id,
+            )
             turn_start_hook_dispatch = extend_cadence_turn_start_dispatch(
-                turn_start_hook_dispatch, registry_path=registry_path, runtime_root=runtime_root,
-                goal_id=args.goal_id, agent_id=args.agent_id)
+                turn_start_hook_dispatch,
+                registry_path=registry_path,
+                runtime_root=runtime_root,
+                goal_id=args.goal_id,
+                agent_id=args.agent_id,
+            )
             from ..control_plane.agents.capability_memory import (
                 extend_turn_start_dispatch as extend_capability_memory_dispatch,
             )
@@ -156,6 +170,7 @@ def handle_turn_command(
             execution_mode=args.execution_mode,
             scheduler_owner=args.scheduler_owner,
         )
+
         def build_turn_decision(
             *, requested_action_todo_id: str | None = None
         ) -> dict[str, Any]:
@@ -176,9 +191,14 @@ def handle_turn_command(
                 ),
                 requested_action_todo_id=requested_action_todo_id,
                 turn_start_hook_dispatch=turn_start_hook_dispatch,
-                interaction_projection_hooks=(periodic_report_pending_intent_interaction_hook(
-                    registry_path=registry_path, runtime_root=runtime_root,
-                    goal_id=args.goal_id, agent_id=args.agent_id),),
+                interaction_projection_hooks=(
+                    periodic_report_pending_intent_interaction_hook(
+                        registry_path=registry_path,
+                        runtime_root=runtime_root,
+                        goal_id=args.goal_id,
+                        agent_id=args.agent_id,
+                    ),
+                ),
             )
 
         decision = build_turn_decision()
@@ -197,6 +217,20 @@ def handle_turn_command(
                 )
             selected_todo["selected_by"] = "turn_controller_advisory_primary"
             decision["action_portfolio"] = advisory_portfolio
+        if args.turn_command == "run-once" and args.execute and args.agent_id:
+            from ..capabilities.manager_context.agent_handoff import (
+                dispatch_from_quota_decision,
+            )
+
+            handoff_receipt = dispatch_from_quota_decision(
+                runtime_root,
+                registry_path,
+                goal_id=args.goal_id,
+                from_agent_id=args.agent_id,
+                decision=decision,
+            )
+            if handoff_receipt is not None:
+                decision["agent_handoff_dispatch_receipt"] = handoff_receipt
         resume_identity = {
             "goal_id": args.resume_goal_id,
             "agent_id": args.resume_agent_id,
@@ -266,15 +300,24 @@ def handle_turn_command(
             # signed, provider-neutral intent untouched. This only projects
             # argv; the Turn driver never executes a projected shell string.
             command = shlex.split(capability_action["intent"]["command"])
-            capability_action["command_argv"] = [command[0], "--registry", str(registry_path),
-                "--runtime-root", str(runtime_root), *command[1:]]
+            capability_action["command_argv"] = [
+                command[0],
+                "--registry",
+                str(registry_path),
+                "--runtime-root",
+                str(runtime_root),
+                *command[1:],
+            ]
             capability_action["command"] = shlex.join(capability_action["command_argv"])
         if turn_start_hook_dispatch.get("registered_count") or (
             turn_start_hook_dispatch.get("failures")
         ):
             payload["turn_start_capability_hook_dispatch"] = turn_start_hook_dispatch
-            if any(isinstance(result, Mapping) and result.get("local_private_state_mutated") is True
-                   for result in turn_start_hook_dispatch.get("results", [])):
+            if any(
+                isinstance(result, Mapping)
+                and result.get("local_private_state_mutated") is True
+                for result in turn_start_hook_dispatch.get("results", [])
+            ):
                 # The pure plan builder has no effects, but live preflight
                 # hooks may journal an inbox or calendar admission. Disclose
                 # that write without claiming a host turn or report ran.
@@ -321,9 +364,15 @@ def handle_turn_command(
                 # The normal host transaction forbids Core mutations. A
                 # capability may prepare artifacts and require authored input;
                 # never run its command as an arbitrary host/shell adapter.
-                payload.update(mode="run_once", status="capability_action_required",
-                               execute=bool(args.execute), executed=False)
-                print_payload(payload, output_format(args), _render_loopx_turn_plan_markdown)
+                payload.update(
+                    mode="run_once",
+                    status="capability_action_required",
+                    execute=bool(args.execute),
+                    executed=False,
+                )
+                print_payload(
+                    payload, output_format(args), _render_loopx_turn_plan_markdown
+                )
                 return 0
             project = Path(args.project).expanduser().resolve()
             planned_host = (
@@ -346,9 +395,7 @@ def handle_turn_command(
                     )
             else:
                 if args.host_command_json:
-                    raise ValueError(
-                        f"{args.host} does not accept --host-command-json"
-                    )
+                    raise ValueError(f"{args.host} does not accept --host-command-json")
                 raw_argv = None
             if args.validation_command_json:
                 raw_validation_argv = json.loads(args.validation_command_json)
@@ -726,9 +773,7 @@ def handle_turn_command(
                         replan_obligation_id=settlement_identity.replan_obligation_id,
                     )
                     if readback is None:
-                        raise RuntimeError(
-                            EXACT_SETTLEMENT_READBACK_NOT_FOUND
-                        )
+                        raise RuntimeError(EXACT_SETTLEMENT_READBACK_NOT_FOUND)
                     event = readback.spend_event
                     if event is None:
                         append_settlement_event(
@@ -790,9 +835,7 @@ def handle_turn_command(
                 readback = project_durable_terminal_completion_readback(
                     todo=durable_todo,
                     expected_todo_id=todo_id,
-                    expected_completion_turn_key=(
-                        settlement_identity.turn_instance_id
-                    ),
+                    expected_completion_turn_key=(settlement_identity.turn_instance_id),
                     projection_source=projection_source,
                     existing_todo_ids=existing_todo_ids,
                 )
@@ -820,9 +863,7 @@ def handle_turn_command(
                         replan_obligation_id=settlement_identity.replan_obligation_id,
                     )
                     if readback is None:
-                        raise RuntimeError(
-                            EXACT_SETTLEMENT_READBACK_NOT_FOUND
-                        )
+                        raise RuntimeError(EXACT_SETTLEMENT_READBACK_NOT_FOUND)
                     run = readback.writeback_run
                     event = readback.writeback_event
                     if run is None and event is None:
@@ -864,9 +905,7 @@ def handle_turn_command(
                         replan_obligation_id=settlement_identity.replan_obligation_id,
                     )
                     if readback is None:
-                        raise RuntimeError(
-                            EXACT_SETTLEMENT_READBACK_NOT_FOUND
-                        )
+                        raise RuntimeError(EXACT_SETTLEMENT_READBACK_NOT_FOUND)
                     run = readback.spend_run
                     event = readback.spend_event
                     if run is not None and run.get("effect_ref") != effect_ref:
@@ -912,9 +951,7 @@ def handle_turn_command(
                         replan_obligation_id=settlement_identity.replan_obligation_id,
                     )
                     if readback is None:
-                        raise RuntimeError(
-                            EXACT_SETTLEMENT_READBACK_NOT_FOUND
-                        )
+                        raise RuntimeError(EXACT_SETTLEMENT_READBACK_NOT_FOUND)
                     event = readback.completion_event
                     completion = terminal_completion_readback()
                     if event is None and completion is None:
@@ -1070,7 +1107,11 @@ def handle_turn_command(
             raise ValueError("turn requires the `plan` or `run-once` subcommand")
     except Exception as exc:  # noqa: BLE001 - CLI boundary renders typed JSON failure
         payload = {
-            **({"error_code": exc.code, **getattr(exc, "payload", {})} if isinstance(getattr(exc, "code", None), str) else {}),
+            **(
+                {"error_code": exc.code, **getattr(exc, "payload", {})}
+                if isinstance(getattr(exc, "code", None), str)
+                else {}
+            ),
             "ok": False,
             "schema_version": (
                 LOOPX_TURN_EXECUTION_SCHEMA_VERSION

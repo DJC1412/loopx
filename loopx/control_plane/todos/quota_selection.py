@@ -69,6 +69,7 @@ def project_quota_planning(
                 "active_items": active("active_next_action_items"),
                 "active_executable_items": active("active_next_action_executable_items"),
                 "agent_id": agent, "profile": profile,
+                "registered_agents": identity.get("registered_agents") or [],
                 "user_gate_scope": filter_user_gate_blocks_agent,
                 "monitor_supported": todo_summary_monitor_writeback_supported(value),
                 "source_open_count": source_open_count,

@@ -553,10 +553,25 @@ def _compact_quota_payload_claim_scope(value: Any) -> Any:
     compact: dict[str, Any] = {}
     for key, child in value.items():
         if isinstance(child, list):
-            compact[key] = _compact_quota_payload_item_list(
+            compact_items = _compact_quota_payload_item_list(
                 child,
                 limit=QUOTA_PAYLOAD_DIAGNOSTIC_LANE_LIMIT,
             )
+            if key in {
+                "executor_excluded_dispatchable_items",
+                "executor_excluded_no_eligible_peer_items",
+            }:
+                for raw_item, compact_item in zip(
+                    child[:QUOTA_PAYLOAD_DIAGNOSTIC_LANE_LIMIT], compact_items
+                ):
+                    if not isinstance(raw_item, dict) or not isinstance(compact_item, dict):
+                        continue
+                    peers = raw_item.get("eligible_peer_ids")
+                    if isinstance(peers, list):
+                        compact_item["eligible_peer_ids"] = [
+                            str(peer) for peer in peers[:QUOTA_PAYLOAD_DIAGNOSTIC_LANE_LIMIT]
+                        ]
+            compact[key] = compact_items
         else:
             compact[key] = child
     return compact

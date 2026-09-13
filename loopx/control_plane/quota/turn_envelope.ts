@@ -60,6 +60,11 @@ const CONTRACT_CAPSULE_FIELDS: Readonly<Record<string, readonly string[]>> = {
   agent_scope_frontier: [
     "schema_version", "action", "effective_action", "blocks_delivery",
     "quiet_noop_allowed", "requires_replan", "recommended_action", "spend_policy",
+    "handoff_dispatch_required", "handoff_dispatch_state", "eligible_peer_ids",
+  ],
+  agent_handoff_dispatch_receipt: [
+    "schema_version", "dispatch_id", "goal_id", "todo_id", "from_agent_id",
+    "to_agent_id", "status", "replayed",
   ],
   automation_liveness: [
     "schema_version", "keep_active", "pause_allowed", "pause_policy",

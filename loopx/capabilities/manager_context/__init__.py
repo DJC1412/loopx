@@ -192,14 +192,32 @@ def deliver(
     path = _root(runtime_root) / "entries" / _hash(request) / (request_id + ".json")
     with exclusive_file_lock(path.with_suffix(".lock")):
         exists = path.exists()
-        if exists and {k: v for k, v in _read(path).items() if k not in {"delivered_at", "source_channel"}} != value:
+        if (
+            exists
+            and {
+                k: v
+                for k, v in _read(path).items()
+                if k not in {"delivered_at", "source_channel"}
+            }
+            != value
+        ):
             raise ValueError("context request identity conflict")
         if not exists:
             from .tracking import _now
-            _write(path, value | {"delivered_at": _now(), "source_channel": session.get("channel_id")})
-        if {k: v for k, v in _read(path).items() if k not in {"delivered_at", "source_channel"}} != value:
+
+            _write(
+                path,
+                value
+                | {"delivered_at": _now(), "source_channel": session.get("channel_id")},
+            )
+        if {
+            k: v
+            for k, v in _read(path).items()
+            if k not in {"delivered_at", "source_channel"}
+        } != value:
             raise ValueError("context delivery readback failed")
     from .roundtrip import register
+
     register(runtime_root, value, session, turn)
     return {
         "request_id": request_id,
@@ -222,6 +240,7 @@ def pending(runtime_root: Path, goal_id: str, agent_id: str) -> dict:
     items = []
     for path in sorted(folder.glob("*.json")):
         from .roundtrip import needs_conclusion
+
         decided = (_root(runtime_root) / "decisions" / path.name).exists()
         if decided and not needs_conclusion(runtime_root, path.stem):
             continue
@@ -233,15 +252,24 @@ def pending(runtime_root: Path, goal_id: str, agent_id: str) -> dict:
         ):
             raise ValueError("context inbox scope mismatch")
         if decided:
-            item = {**item, "receiver_decision_recorded": True,
-                    "next_action": "Return the original audience a conclusion with manager-inbox report; do not repeat the recorded decision or reprioritize unrelated work."}
+            item = {
+                **item,
+                "receiver_decision_recorded": True,
+                "next_action": "Return the original audience a conclusion with manager-inbox report; do not repeat the recorded decision or reprioritize unrelated work.",
+            }
         items.append(item)
         if len(items) == 21:
             break
+    from .agent_handoff import pending_handoffs
+
+    handoffs = pending_handoffs(runtime_root, goal_id, agent_id)
+    handoff_has_more = len(handoffs) > 20
+    remaining = max(0, 20 - len(handoffs[:20]))
+    combined = handoffs[:20] + items[:remaining]
     return {
         "ok": True,
-        "items": items[:20],
-        "has_more": len(items) > 20,
+        "items": combined,
+        "has_more": handoff_has_more or len(items) > remaining,
         "instruction": INSTRUCTION,
     }
 
@@ -276,6 +304,7 @@ def acknowledge(
                 raise ValueError("context decision already recorded")
         else:
             from .tracking import _now
+
             _write(path, value | {"decided_at": _now()})
     return {"ok": True, **value}
 
@@ -334,10 +363,39 @@ def turn_start_hook(
         required_read={
             "kind": "operator_inbox",
             "command": command,
-            "reason": "Review owner context and decide whether the current plan should change; no priority is imposed.",
+            "reason": (
+                "Review pending owner context or a typed same-Goal agent handoff before "
+                "work; owner context imposes no priority and a handoff requires canonical claim."
+            ),
             "ordering": "before_work",
         },
     )
+
+
+def extend_turn_start_dispatch(
+    dispatch: dict[str, Any],
+    *,
+    runtime_root: Path,
+    registry_path: Path,
+    goal_id: str,
+    agent_id: str | None,
+) -> dict[str, Any]:
+    """Merge the shared manager-context hook into any Turn entry point."""
+    if not agent_id:
+        return dispatch
+    from ...control_plane.capability_hooks import dispatch_turn_start_hooks
+
+    context_dispatch = dispatch_turn_start_hooks(
+        (turn_start_hook(runtime_root, registry_path, goal_id, agent_id),)
+    )
+    merged = dict(dispatch)
+    for key in ("results", "required_reads", "failures"):
+        merged[key] = list(merged.get(key) or []) + list(
+            context_dispatch.get(key) or []
+        )
+    for key in ("registered_count", "invoked_count"):
+        merged[key] = int(merged.get(key) or 0) + int(context_dispatch.get(key) or 0)
+    return merged
 
 
 def evidence_goal_scope(runtime_root: Path, channel: str) -> list[str] | None:
@@ -358,7 +416,8 @@ def evidence_goal_scope(runtime_root: Path, channel: str) -> list[str] | None:
             return None
         ids = source["evidence_goal_ids"]
         if not isinstance(ids, list) or any(
-            not isinstance(v, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}", v)
+            not isinstance(v, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}", v)
             for v in ids
         ):
             return []
@@ -367,8 +426,14 @@ def evidence_goal_scope(runtime_root: Path, channel: str) -> list[str] | None:
         return []
 
 
-def configure_evidence_scope(runtime_root: Path, registry_path: Path, *, channel: str,
-                             goal_ids: list[str], execute: bool = False) -> dict:
+def configure_evidence_scope(
+    runtime_root: Path,
+    registry_path: Path,
+    *,
+    channel: str,
+    goal_ids: list[str],
+    execute: bool = False,
+) -> dict:
     """Local operator grants only selected Goal summaries to an exact audience."""
     if not re.fullmatch(r"manager\.external\.[a-f0-9]{24}", channel):
         raise ValueError("an exact external manager channel is required")
@@ -381,13 +446,24 @@ def configure_evidence_scope(runtime_root: Path, registry_path: Path, *, channel
     if execute:
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with exclusive_file_lock(path.with_suffix(".lock")):
-            policy = _read(path) if path.exists() else {"schema_version": POLICY_SCHEMA, "sources": {}}
+            policy = (
+                _read(path)
+                if path.exists()
+                else {"schema_version": POLICY_SCHEMA, "sources": {}}
+            )
             if policy.get("schema_version") != POLICY_SCHEMA:
                 raise ValueError("invalid manager policy")
-            policy.setdefault("sources", {}).setdefault(channel, {})["evidence_goal_ids"] = ids
+            policy.setdefault("sources", {}).setdefault(channel, {})[
+                "evidence_goal_ids"
+            ] = ids
             _write(path, policy)
         if evidence_goal_scope(runtime_root, channel) != ids:
             raise ValueError("read scope verification failed")
-    return {"ok": True, "executed": execute, "channel_id": channel,
-            "evidence_goal_ids": ids, "scope": "audience_goal_summaries",
-            "delegation_authority_changed": False}
+    return {
+        "ok": True,
+        "executed": execute,
+        "channel_id": channel,
+        "evidence_goal_ids": ids,
+        "scope": "audience_goal_summaries",
+        "delegation_authority_changed": False,
+    }

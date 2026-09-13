@@ -83,12 +83,16 @@ _ACTION_SCOPE_STOPWORDS = {
 }
 
 AGENT_TASK_SCOPE = "goal_all_read_claimed_run_global_read_v0"
+
+
 def _agent_identity_has_scoped_lane(
     agent_identity: dict[str, Any] | None,
 ) -> TypeGuard[dict[str, object]]:
     return isinstance(agent_identity, dict) and bool(
         normalize_todo_claimed_by(agent_identity.get("agent_id"))
     )
+
+
 def _attach_agent_identity_contracts(
     *,
     payload: dict[str, Any],
@@ -103,6 +107,8 @@ def _attach_agent_identity_contracts(
 
 def _todo_task_class(item: dict[str, Any]) -> str:
     return todo_item_task_class(item)
+
+
 def _todo_projection_sort_key(item: dict[str, Any]) -> tuple[int, int, str, str]:
     return todo_presentation_sort_key(item)
 
@@ -177,7 +183,10 @@ def agent_scope_count_advancement_items(
         if normalized_claimed_by == "__unclaimed__":
             if item_claimed_by:
                 continue
-        elif normalized_claimed_by is not None and item_claimed_by != normalized_claimed_by:
+        elif (
+            normalized_claimed_by is not None
+            and item_claimed_by != normalized_claimed_by
+        ):
             continue
         count += 1
     return count
@@ -205,7 +214,9 @@ def _action_scope_tokens_from_text(text: str) -> set[str]:
     }
 
 
-def _todo_item_claimed_by_agent_or_unclaimed(item: dict[str, Any], *, agent_id: str) -> bool:
+def _todo_item_claimed_by_agent_or_unclaimed(
+    item: dict[str, Any], *, agent_id: str
+) -> bool:
     return agent_scope_item_claimed_by_agent_or_unclaimed(item, agent_id=agent_id)
 
 
@@ -221,11 +232,17 @@ def _scoped_user_gate_fallback(
     if not gates or not isinstance(agent_todo_summary, dict):
         return None
     raw_due_monitor_candidates = agent_todo_summary.get("monitor_due_items")
-    due_monitor_candidates = raw_due_monitor_candidates if isinstance(raw_due_monitor_candidates, list) else []
-    raw_ready_deferred_candidates = agent_todo_summary.get(
-        "deferred_resume_candidates"
+    due_monitor_candidates = (
+        raw_due_monitor_candidates
+        if isinstance(raw_due_monitor_candidates, list)
+        else []
     )
-    ready_deferred_candidates = raw_ready_deferred_candidates if isinstance(raw_ready_deferred_candidates, list) else []
+    raw_ready_deferred_candidates = agent_todo_summary.get("deferred_resume_candidates")
+    ready_deferred_candidates = (
+        raw_ready_deferred_candidates
+        if isinstance(raw_ready_deferred_candidates, list)
+        else []
+    )
 
     # An empty capability projection is authoritative for advancement work.
     # Due monitors are projected separately from advancement candidates and are
@@ -263,8 +280,11 @@ def _scoped_user_gate_fallback(
         else None
     )
     selection = select_scoped_gate_fallback(
-        gates, executable_items, agent_id=claim_scope.get("agent_id") if claim_scope else None,
-        allow_unrelated_gate=allow_unrelated_gate, monitor_debt_backoff_active=monitor_debt_backoff_active,
+        gates,
+        executable_items,
+        agent_id=claim_scope.get("agent_id") if claim_scope else None,
+        allow_unrelated_gate=allow_unrelated_gate,
+        monitor_debt_backoff_active=monitor_debt_backoff_active,
     )
     if selection is None:
         return None
@@ -274,8 +294,14 @@ def _scoped_user_gate_fallback(
     blocked_items = []
     for blocked in selection["blocked"][:3]:
         item = executable_items[blocked["candidate_index"]]
-        blocked_items.append({**compact_todo_summary_item(item, text=str(item.get("text") or "").strip()),
-                              "todo_gate_relation": blocked["relation"]})
+        blocked_items.append(
+            {
+                **compact_todo_summary_item(
+                    item, text=str(item.get("text") or "").strip()
+                ),
+                "todo_gate_relation": blocked["relation"],
+            }
+        )
     selected_text = str(selected.get("text") or "").strip()
     selected_item = compact_todo_summary_item(selected, text=selected_text)
     selected_is_deferred_replan = selection["deferred_replan"]
@@ -317,7 +343,9 @@ def _scoped_user_gate_fallback(
     }
 
 
-def _first_executable_todo_text(agent_todo_summary: dict[str, Any] | None) -> str | None:
+def _first_executable_todo_text(
+    agent_todo_summary: dict[str, Any] | None,
+) -> str | None:
     if not isinstance(agent_todo_summary, dict):
         return None
     raw_items = agent_todo_summary.get("first_executable_items")
@@ -423,7 +451,9 @@ def _agent_scoped_user_todo_override(
             "blocked_action_scope": None,
         },
         "item_patch": {
-            "status": "active_state_agent_todo" if selected_action else "agent_scope_wait",
+            "status": "active_state_agent_todo"
+            if selected_action
+            else "agent_scope_wait",
             "waiting_on": "codex" if selected_action else "agent_scope",
             "recommended_action": (
                 selected_action or "wait for work or a user action bound to this agent"
@@ -505,7 +535,9 @@ def _agent_lane_frontier_hint(
 
     if isinstance(agent_lane_next_action, dict):
         selected_by = str(agent_lane_next_action.get("selected_by") or "")
-        claim_required = agent_lane_next_action.get("claim_required_before_work") is True
+        claim_required = (
+            agent_lane_next_action.get("claim_required_before_work") is True
+        )
         target_todo_id = normalize_todo_id(agent_lane_next_action.get("todo_id"))
         if selected_by == "unclaimed_todo" or claim_required:
             action = None
@@ -575,7 +607,9 @@ def _agent_lane_frontier_hint(
                     else None
                 ),
             )
-        deferred_todo_id = _first_compact_todo_id(frontier.get("deferred_resume_candidates"))
+        deferred_todo_id = _first_compact_todo_id(
+            frontier.get("deferred_resume_candidates")
+        )
         route_todo_id = _first_compact_todo_id(
             frontier.get("route_continuation_replan_candidates")
         )
@@ -631,7 +665,9 @@ def _agent_lane_frontier_hint(
             )
         blocker_todo_id = _first_compact_todo_id(frontier.get("blocking_handoff_gates"))
         if not blocker_todo_id:
-            blocker_todo_id = _first_compact_todo_id(frontier.get("other_agent_claimed_items"))
+            blocker_todo_id = _first_compact_todo_id(
+                frontier.get("other_agent_claimed_items")
+            )
         if blocker_todo_id:
             return build_hint(
                 AgentLaneFrontierHintDecision.QUIET_NOOP_BLOCKER,
@@ -660,10 +696,20 @@ def _agent_lane_frontier_hint(
     current_advancement_count = int(
         agent_todo_summary.get("current_agent_claimed_advancement_count") or 0
     )
-    current_monitor_count = int(agent_todo_summary.get("current_agent_claimed_monitor_count") or 0)
+    current_monitor_count = int(
+        agent_todo_summary.get("current_agent_claimed_monitor_count") or 0
+    )
     unclaimed_count = _selectable_unclaimed_advancement_count(agent_todo_summary)
-    lane = str(work_lane_contract.get("lane") or "") if isinstance(work_lane_contract, dict) else ""
-    if current_advancement_count == 0 and unclaimed_count == 0 and current_monitor_count > 0:
+    lane = (
+        str(work_lane_contract.get("lane") or "")
+        if isinstance(work_lane_contract, dict)
+        else ""
+    )
+    if (
+        current_advancement_count == 0
+        and unclaimed_count == 0
+        and current_monitor_count > 0
+    ):
         return build_hint(
             AgentLaneFrontierHintDecision.QUIET_NOOP_BLOCKER,
             source="agent_todo_summary",
@@ -708,11 +754,15 @@ def _agent_scope_deferred_resume_candidates(
             continue
         if not todo_item_is_deferred(item):
             continue
-        identity = str(item.get("todo_id") or item.get("index") or item.get("text") or "")
+        identity = str(
+            item.get("todo_id") or item.get("index") or item.get("text") or ""
+        )
         if identity in seen:
             continue
         seen.add(identity)
-        unique.append(compact_todo_summary_item(item, text=str(item.get("text") or "").strip()))
+        unique.append(
+            compact_todo_summary_item(item, text=str(item.get("text") or "").strip())
+        )
     return sorted(unique, key=_todo_projection_sort_key)
 
 
@@ -749,11 +799,15 @@ def _agent_scope_monitor_blocked_resume_candidates(
         # The typed resume-planning owner has already diagnosed and selected
         # this repair lane. This consumer keeps executor scope and presentation,
         # not a second interpretation of condition target/class/status.
-        identity = str(item.get("todo_id") or item.get("index") or item.get("text") or "")
+        identity = str(
+            item.get("todo_id") or item.get("index") or item.get("text") or ""
+        )
         if identity in seen:
             continue
         seen.add(identity)
-        compact = compact_todo_summary_item(item, text=str(item.get("text") or "").strip())
+        compact = compact_todo_summary_item(
+            item, text=str(item.get("text") or "").strip()
+        )
         if item.get("blocking_monitor_todo_id"):
             compact["blocking_monitor_todo_id"] = item["blocking_monitor_todo_id"]
         unique.append(compact)
@@ -803,7 +857,9 @@ def _agent_scope_handoff_gates_by_state(
             continue
         if item.get("gate_state") != gate_state:
             continue
-        identity = str(item.get("todo_id") or item.get("index") or item.get("text") or "")
+        identity = str(
+            item.get("todo_id") or item.get("index") or item.get("text") or ""
+        )
         if identity in seen:
             continue
         seen.add(identity)
@@ -862,7 +918,9 @@ def _agent_scope_route_continuation_replan_candidates(
             for item in value:
                 if not isinstance(item, dict):
                     continue
-                if not _route_continuation_candidate_matches_agent(item, agent_id=agent_id):
+                if not _route_continuation_candidate_matches_agent(
+                    item, agent_id=agent_id
+                ):
                     continue
                 candidates.append(item)
 
@@ -887,7 +945,9 @@ def _agent_scope_route_continuation_replan_candidates(
         if not identity or identity in seen:
             continue
         seen.add(identity)
-        compact = compact_todo_summary_item(item, text=str(item.get("text") or "").strip())
+        compact = compact_todo_summary_item(
+            item, text=str(item.get("text") or "").strip()
+        )
         compact["route_continuation_replan_required"] = True
         if item.get("route_continuation_reason") is not None:
             compact["route_continuation_reason"] = item.get("route_continuation_reason")
@@ -997,8 +1057,7 @@ def _monitor_blocked_resume_frontier(
     first = candidates[0]
     candidate_id = str(first.get("todo_id") or "").strip() or "<todo_id>"
     monitor_id = (
-        str(first.get("blocking_monitor_todo_id") or "").strip()
-        or "<monitor_todo_id>"
+        str(first.get("blocking_monitor_todo_id") or "").strip() or "<monitor_todo_id>"
     )
     return build_agent_scope_frontier_payload(
         agent_id=context.agent_id,
@@ -1021,6 +1080,96 @@ def _monitor_blocked_resume_frontier(
             "monitor_blocked_resume_candidate_count": len(candidates),
         },
         extra_fields={"monitor_blocked_resume_candidates": candidates[:3]},
+    )
+
+
+def _executor_excluded_handoff_dispatch_frontier(
+    context: _AgentScopeNoCandidateContext,
+) -> dict[str, Any] | None:
+    claim_scope = context.summary.get("claim_scope")
+    if not isinstance(claim_scope, dict):
+        return None
+    items = claim_scope.get("executor_excluded_dispatchable_items")
+    if not isinstance(items, list):
+        return None
+    candidates = [item for item in items if isinstance(item, dict)]
+    if not candidates:
+        return None
+    first = candidates[0]
+    todo_id = str(first.get("todo_id") or "").strip() or "<todo_id>"
+    peers = [
+        str(value).strip()
+        for value in first.get("eligible_peer_ids", [])
+        if str(value).strip()
+    ]
+    peer_text = ", ".join(peers) or "an eligible registered peer"
+    return build_agent_scope_frontier_payload(
+        agent_id=context.agent_id,
+        action=AgentScopeFrontierAction.SUCCESSOR_REPLAN_REQUIRED,
+        quiet_noop_allowed=False,
+        spend_policy="spend once after durable peer activation/claim receipt writeback",
+        reason=(
+            f"independent handoff {todo_id} excludes current agent {context.agent_id} "
+            f"but is dispatchable to registered peer {peer_text}; quiet wait would strand "
+            "the handoff"
+        ),
+        recommended_action=(
+            f"Activate or resume one eligible same-Goal peer ({peer_text}) for {todo_id}; "
+            "the peer must claim it before execution, and the coordinator must record a "
+            "durable dispatch/claim receipt. Do not claim or execute it as the excluded agent."
+        ),
+        requires_replan=True,
+        candidate_counts={
+            **context.candidate_counts,
+            "executor_excluded_dispatchable_count": len(candidates),
+        },
+        extra_fields={
+            "handoff_dispatch_required": True,
+            "handoff_dispatch_state": "dispatchable",
+            "executor_excluded_dispatchable_items": candidates[:3],
+            "eligible_peer_ids": peers,
+        },
+    )
+
+
+def _executor_excluded_handoff_no_peer_frontier(
+    context: _AgentScopeNoCandidateContext,
+) -> dict[str, Any] | None:
+    claim_scope = context.summary.get("claim_scope")
+    if not isinstance(claim_scope, dict):
+        return None
+    items = claim_scope.get("executor_excluded_no_eligible_peer_items")
+    if not isinstance(items, list):
+        return None
+    candidates = [item for item in items if isinstance(item, dict)]
+    if not candidates:
+        return None
+    todo_id = str(candidates[0].get("todo_id") or "").strip() or "<todo_id>"
+    return build_agent_scope_frontier_payload(
+        agent_id=context.agent_id,
+        action=AgentScopeFrontierAction.SUCCESSOR_REPLAN_REQUIRED,
+        quiet_noop_allowed=False,
+        spend_policy="do not spend until an eligible same-Goal peer is registered",
+        reason=(
+            f"independent handoff {todo_id} excludes current agent {context.agent_id}, "
+            "and no registered same-Goal peer is eligible; dispatch cannot complete"
+        ),
+        recommended_action=(
+            f"Register an eligible same-Goal peer for {todo_id}, then let the coordinator "
+            "dispatch it and require a canonical claim receipt. The excluded agent must not "
+            "claim or execute it."
+        ),
+        requires_replan=True,
+        candidate_counts={
+            **context.candidate_counts,
+            "executor_excluded_no_eligible_peer_count": len(candidates),
+        },
+        extra_fields={
+            "handoff_dispatch_required": False,
+            "handoff_dispatch_state": "no_eligible_peer",
+            "executor_excluded_no_eligible_peer_items": candidates[:3],
+            "eligible_peer_ids": [],
+        },
     )
 
 
@@ -1301,7 +1450,9 @@ def _other_agent_or_exhausted_frontier(
             "other_claimants": other_claimants,
             "blocking_handoff_claimants": blocking_claimants,
             "other_agent_claimed_items": [
-                compact_todo_summary_item(item, text=str(item.get("text") or "").strip())
+                compact_todo_summary_item(
+                    item, text=str(item.get("text") or "").strip()
+                )
                 for item in other_items[:3]
             ],
         },
@@ -1309,6 +1460,8 @@ def _other_agent_or_exhausted_frontier(
 
 
 _AGENT_SCOPE_NO_CANDIDATE_RULES = (
+    _executor_excluded_handoff_dispatch_frontier,
+    _executor_excluded_handoff_no_peer_frontier,
     _monitor_blocked_resume_frontier,
     _deferred_resume_frontier,
     _blocked_successor_wait_frontier,

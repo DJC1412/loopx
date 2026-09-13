@@ -21,6 +21,7 @@ def register_manager_inbox(subparsers, add_format):
         choices=(
             "read",
             "acknowledge",
+            "acknowledge-handoff",
             "link",
             "report",
             "status",
@@ -51,8 +52,14 @@ def handle_manager_inbox(args, registry_path, runtime_root):
     try:
         if args.manager_inbox_action == "configure-ssh-read-scope":
             from ..capabilities.manager_context.ssh_evidence import configure
-            result = configure(runtime_root, channel=args.channel_id or "", host=args.ssh_host,
-                               goal_ids=args.read_goal_id, execute=args.execute)
+
+            result = configure(
+                runtime_root,
+                channel=args.channel_id or "",
+                host=args.ssh_host,
+                goal_ids=args.read_goal_id,
+                execute=args.execute,
+            )
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
         if args.manager_inbox_action == "configure-read-scope":
@@ -74,10 +81,39 @@ def handle_manager_inbox(args, registry_path, runtime_root):
         if args.manager_inbox_action == "read":
             result = pending(runtime_root, args.goal_id, args.agent_id)
             from ..capabilities.manager_context.tracking import record_read
+            from ..capabilities.manager_context.agent_handoff import (
+                record_handoff_reads,
+            )
 
-            record_read(runtime_root, result["items"])
+            owner_context_items = [
+                item
+                for item in result["items"]
+                if item.get("inbox_kind") != "agent_handoff"
+            ]
+            record_read(runtime_root, owner_context_items)
+            record_handoff_reads(runtime_root, result["items"])
+            if any(
+                item.get("inbox_kind") == "agent_handoff" for item in result["items"]
+            ):
+                result["handoff_followthrough"] = (
+                    "For every agent_handoff item, run its exact claim_command before work, "
+                    "then its acknowledge_command. A delivered message is not a claim receipt."
+                )
             result["followthrough"] = (
-                "After reading and deciding, associate Core work with manager-inbox link. Then use manager-inbox report --phase conclusion --reply-text to return this request's concrete result, replan decision, or explicit blocker/defer reason to its original audience automatically. Use optional --phase decision only for meaningful interim news during longer work. Adoption/linking alone is not a completed exchange. Do not wait for the owner to ask again. Write audience-ready text, not private deliberation."
+                "For owner-context items, after reading and deciding, associate Core work "
+                "with manager-inbox link. Then use manager-inbox report --phase conclusion "
+                "--reply-text to return the concrete result, replan decision, or explicit "
+                "blocker/defer reason automatically."
+            )
+        elif args.manager_inbox_action == "acknowledge-handoff":
+            from ..capabilities.manager_context.agent_handoff import acknowledge_claim
+
+            result = acknowledge_claim(
+                runtime_root,
+                registry_path,
+                goal_id=args.goal_id,
+                agent_id=args.agent_id,
+                dispatch_id=args.request_id or "",
             )
         elif args.manager_inbox_action == "report":
             from ..capabilities.manager_context.roundtrip import report

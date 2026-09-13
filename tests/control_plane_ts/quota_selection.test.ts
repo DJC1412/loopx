@@ -48,6 +48,33 @@ test("execution scope is shared with active-next-action, including removed-polic
   assert.deepEqual(ids((result.claim_visibility as JsonObject).claimed_by_others_items), ["peer"]);
 });
 
+test("executor-excluded independent handoffs identify eligible peers and fail closed without one", () => {
+  const items = [
+    row("dispatchable", {excluded: ["agent-a"], payload: {
+      todo_id: "dispatchable", continuation_policy: "independent_handoff",
+    }}),
+    row("unavailable", {excluded: ["agent-a", "agent-b", "agent-c"], payload: {
+      todo_id: "unavailable", continuation_policy: "independent_handoff",
+    }}),
+    row("ordinary", {excluded: ["agent-a"]}),
+  ];
+  const lanes = projectQuotaSelection(request(items, {
+    registered_agents: ["agent-a", "agent-b", "agent-c"],
+  })).lanes as JsonObject;
+  const scope = lanes.claim_scope as JsonObject;
+  assert.equal(scope.executor_excluded_handoff_count, 2);
+  assert.equal(scope.executor_excluded_dispatchable_count, 1);
+  assert.deepEqual(scope.executor_excluded_dispatchable_items, [{
+    todo_id: "dispatchable", continuation_policy: "independent_handoff",
+    eligible_peer_ids: ["agent-b", "agent-c"],
+  }]);
+  assert.equal(scope.executor_excluded_no_eligible_peer_count, 1);
+  assert.deepEqual(scope.executor_excluded_no_eligible_peer_items, [{
+    todo_id: "unavailable", continuation_policy: "independent_handoff",
+    eligible_peer_ids: [],
+  }]);
+});
+
 test("monitor eligibility preserves provider writeback and capability fences", () => {
   const items = [row("due", {task_class: "continuous_monitor", due: true}),
     row("missing", {task_class: "continuous_monitor", due: true, missing: ["network"]}),
