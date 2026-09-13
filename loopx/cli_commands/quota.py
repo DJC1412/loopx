@@ -42,6 +42,7 @@ from ..control_plane.quota.settlement_cli import (
     render_existing_heartbeat_receipt_payload,
 )
 from ..control_plane.quota.turn_envelope import build_turn_envelope
+from ..control_plane.capability_hooks import InteractionProjectionHookRegistration
 from ..control_plane.coordination.legacy_writer_fence import (
     LegacyCoordinationWriterFenced,
 )
@@ -525,6 +526,175 @@ def _attach_turn_start_hook_dispatch(
         payload["turn_start_capability_hook_dispatch"] = dict(dispatch)
 
 
+def _attach_agent_handoff_dispatch(
+    payload: dict[str, object],
+    *,
+    runtime_root: Path,
+    registry_path: Path,
+    goal_id: str,
+    from_agent_id: str | None,
+) -> None:
+    """Attach a same-Goal handoff receipt without growing quota orchestration."""
+
+    if not from_agent_id:
+        return
+
+    from ..capabilities.manager_context.agent_handoff import (
+        dispatch_from_quota_decision,
+    )
+
+    receipt = dispatch_from_quota_decision(
+        runtime_root,
+        registry_path,
+        goal_id=goal_id,
+        from_agent_id=from_agent_id,
+        decision=payload,
+    )
+    if receipt is not None:
+        payload["agent_handoff_dispatch_receipt"] = receipt
+
+
+def _reconcile_should_run_heartbeat(
+    args: argparse.Namespace,
+    *,
+    payload: dict[str, object],
+    context: QuotaCommandContext,
+    registry_path: Path,
+    runtime_root_arg: str | None,
+    heartbeat_receipt_existing: dict[str, object] | None,
+    receipt_bound_todo_id: str | None,
+    receipt_bound_replan_obligation_id: str | None,
+    interaction_projection_hooks: tuple[InteractionProjectionHookRegistration, ...],
+) -> tuple[
+    dict[str, object],
+    dict[str, object] | None,
+    str,
+    bool,
+    str,
+    bool,
+    dict[str, object],
+    dict[str, object] | None,
+]:
+    """Reconcile or persist one heartbeat receipt for a should-run decision."""
+
+    status_payload = context.status_payload
+    cache_metadata = context.cache_metadata
+    heartbeat_turn_id = context.heartbeat_turn_id
+    existing_status = "replayed"
+    existing_appended = False
+    stall_observation = "not_evaluated"
+    receipt_ready = False
+    if not heartbeat_turn_id:
+        return (
+            payload,
+            heartbeat_receipt_existing,
+            existing_status,
+            existing_appended,
+            stall_observation,
+            receipt_ready,
+            status_payload,
+            cache_metadata,
+        )
+    if heartbeat_receipt_existing:
+        (
+            heartbeat_receipt_existing,
+            existing_status,
+            existing_appended,
+            stall_observation,
+            receipt_ready,
+        ) = reconcile_existing_heartbeat_receipt_for_turn(
+            payload,
+            args,
+            runtime_root=context.runtime_root,
+            turn_instance_id=heartbeat_turn_id,
+            existing=heartbeat_receipt_existing,
+        )
+    else:
+        existing_stall = find_quota_monitor_poll_turn(
+            context.runtime_root,
+            goal_id=args.goal_id,
+            agent_id=args.agent_id,
+            turn_instance_id=heartbeat_turn_id,
+        )
+        if payload.get("effective_action") == "monitor_quiet_skip" or existing_stall:
+            poll = record_quota_monitor_poll(
+                status_payload,
+                goal_id=args.goal_id,
+                registry_path=registry_path,
+                execute=True,
+                source="heartbeat",
+                agent_id=args.agent_id,
+                available_capabilities=args.available_capabilities,
+                turn_instance_id=heartbeat_turn_id,
+                scheduler_execution_context=context.scheduler_context,
+                operator_inbox_urgency_projector=(
+                    context.operator_inbox_urgency_projector
+                ),
+                bounded_research_frontier_projector=(
+                    project_live_explore_composition_frontier
+                ),
+            )
+            if not poll.get("ok"):
+                raise RuntimeError(
+                    "heartbeat stall observation writeback failed: "
+                    f"{poll.get('reason') or 'missing follow-up quota decision'}"
+                )
+            status_payload = collect_status(
+                registry_path=registry_path,
+                runtime_root_override=runtime_root_arg,
+                scan_roots=context.scan_roots,
+                limit=context.status_limit,
+                goal_id=context.status_goal_id,
+                available_capabilities=args.available_capabilities,
+            )
+            payload = build_live_quota_should_run_decision(
+                status_payload,
+                goal_id=args.goal_id,
+                agent_id=args.agent_id,
+                available_capabilities=args.available_capabilities,
+                include_scheduler_detail="scheduler" in context.detail_sections,
+                include_agent_todo_detail=(
+                    "agent-todos" in context.detail_sections
+                    and not bool(getattr(args, "turn_envelope", False))
+                ),
+                codex_app_current_rrule=args.codex_app_current_rrule,
+                registry_path=registry_path,
+                runtime_root=context.runtime_root,
+                host_observation_resolver=resolve_codex_app_automation_rrule,
+                scheduler_execution_context=context.scheduler_context,
+                operator_inbox_urgency_projector=(
+                    context.operator_inbox_urgency_projector
+                ),
+                bounded_research_frontier_projector=(
+                    project_live_explore_composition_frontier
+                ),
+                receipt_bound_todo_id=receipt_bound_todo_id,
+                receipt_bound_replan_obligation_id=(receipt_bound_replan_obligation_id),
+                turn_instance_id=heartbeat_turn_id,
+                interaction_projection_hooks=interaction_projection_hooks,
+            )
+            cache_metadata = None
+            stall_observation = "replayed" if poll.get("replayed") else "appended"
+            payload["heartbeat_stall_writeback"] = {
+                "turn_instance_id": heartbeat_turn_id,
+                "status": stall_observation,
+                "generated_at": poll.get("generated_at"),
+            }
+        else:
+            stall_observation = "not_applicable"
+        receipt_ready = True
+    return (
+        payload,
+        heartbeat_receipt_existing,
+        existing_status,
+        existing_appended,
+        stall_observation,
+        receipt_ready,
+        status_payload,
+        cache_metadata,
+    )
+
+
 def _render_turn_envelope_payload(
     payload: dict[str, object],
     scheduler_context: object,
@@ -658,112 +828,33 @@ def handle_quota_command(
                 receipt_bound_todo_id=receipt_bound_todo_id,
                 receipt_bound_replan_obligation_id=(receipt_bound_replan_obligation_id),
             )
-            if heartbeat_turn_id:
-                if heartbeat_receipt_existing:
-                    (
-                        heartbeat_receipt_existing,
-                        heartbeat_receipt_existing_status,
-                        heartbeat_receipt_existing_appended,
-                        heartbeat_stall_observation,
-                        heartbeat_receipt_ready,
-                    ) = reconcile_existing_heartbeat_receipt_for_turn(
-                        payload,
-                        args,
-                        runtime_root=runtime_root,
-                        turn_instance_id=heartbeat_turn_id,
-                        existing=heartbeat_receipt_existing,
-                    )
-                else:
-                    existing_stall = find_quota_monitor_poll_turn(
-                        runtime_root,
-                        goal_id=args.goal_id,
-                        agent_id=args.agent_id,
-                        turn_instance_id=heartbeat_turn_id,
-                    )
-                    if (
-                        payload.get("effective_action") == "monitor_quiet_skip"
-                        or existing_stall is not None
-                    ):
-                        poll = record_quota_monitor_poll(
-                            status_payload,
-                            goal_id=args.goal_id,
-                            registry_path=registry_path,
-                            execute=True,
-                            source="heartbeat",
-                            agent_id=args.agent_id,
-                            available_capabilities=args.available_capabilities,
-                            turn_instance_id=heartbeat_turn_id,
-                            scheduler_execution_context=scheduler_context,
-                            operator_inbox_urgency_projector=operator_inbox_urgency_projector,
-                            bounded_research_frontier_projector=(
-                                project_live_explore_composition_frontier
-                            ),
-                        )
-                        if not poll.get("ok"):
-                            raise RuntimeError(
-                                "heartbeat stall observation writeback failed: "
-                                f"{poll.get('reason') or 'missing follow-up quota decision'}"
-                            )
-                        status_payload = collect_status(
-                            registry_path=registry_path,
-                            runtime_root_override=runtime_root_arg,
-                            scan_roots=scan_roots,
-                            limit=status_limit,
-                            goal_id=status_goal_id,
-                            available_capabilities=args.available_capabilities,
-                        )
-                        payload = build_live_quota_should_run_decision(
-                            status_payload,
-                            goal_id=args.goal_id,
-                            agent_id=args.agent_id,
-                            available_capabilities=args.available_capabilities,
-                            include_scheduler_detail="scheduler" in detail_sections,
-                            include_agent_todo_detail=(
-                                "agent-todos" in detail_sections
-                                and not bool(getattr(args, "turn_envelope", False))
-                            ),
-                            codex_app_current_rrule=args.codex_app_current_rrule,
-                            registry_path=registry_path,
-                            runtime_root=runtime_root,
-                            host_observation_resolver=resolve_codex_app_automation_rrule,
-                            scheduler_execution_context=scheduler_context,
-                            operator_inbox_urgency_projector=operator_inbox_urgency_projector,
-                            bounded_research_frontier_projector=(
-                                project_live_explore_composition_frontier
-                            ),
-                            receipt_bound_todo_id=receipt_bound_todo_id,
-                            receipt_bound_replan_obligation_id=(
-                                receipt_bound_replan_obligation_id
-                            ),
-                            turn_instance_id=heartbeat_turn_id,
-                            interaction_projection_hooks=(interaction_projection_hooks),
-                        )
-                        cache_metadata = None
-                        heartbeat_stall_observation = (
-                            "replayed" if poll.get("replayed") else "appended"
-                        )
-                        payload["heartbeat_stall_writeback"] = {
-                            "turn_instance_id": heartbeat_turn_id,
-                            "status": heartbeat_stall_observation,
-                            "generated_at": poll.get("generated_at"),
-                        }
-                    else:
-                        heartbeat_stall_observation = "not_applicable"
-                    heartbeat_receipt_ready = True
-            if args.agent_id:
-                from ..capabilities.manager_context.agent_handoff import (
-                    dispatch_from_quota_decision,
-                )
-
-                handoff_receipt = dispatch_from_quota_decision(
-                    runtime_root,
-                    registry_path,
-                    goal_id=args.goal_id,
-                    from_agent_id=args.agent_id,
-                    decision=payload,
-                )
-                if handoff_receipt is not None:
-                    payload["agent_handoff_dispatch_receipt"] = handoff_receipt
+            (
+                payload,
+                heartbeat_receipt_existing,
+                heartbeat_receipt_existing_status,
+                heartbeat_receipt_existing_appended,
+                heartbeat_stall_observation,
+                heartbeat_receipt_ready,
+                status_payload,
+                cache_metadata,
+            ) = _reconcile_should_run_heartbeat(
+                args,
+                payload=payload,
+                context=context,
+                registry_path=registry_path,
+                runtime_root_arg=runtime_root_arg,
+                heartbeat_receipt_existing=heartbeat_receipt_existing,
+                receipt_bound_todo_id=receipt_bound_todo_id,
+                receipt_bound_replan_obligation_id=(receipt_bound_replan_obligation_id),
+                interaction_projection_hooks=interaction_projection_hooks,
+            )
+            _attach_agent_handoff_dispatch(
+                payload,
+                runtime_root=runtime_root,
+                registry_path=registry_path,
+                goal_id=args.goal_id,
+                from_agent_id=args.agent_id,
+            )
         elif args.quota_command == "monitor-poll":
             payload = record_quota_monitor_poll_for_cli(
                 args,
