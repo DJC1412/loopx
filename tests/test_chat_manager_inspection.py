@@ -321,9 +321,16 @@ def test_stopped_goals_are_opt_in_but_stale_active_remains_visible(tmp_path):
     assert explicit['rows'][0]['activation_state'] == 'stopped'
 
 
-def repository_artifact_inspector(tmp_path, monkeypatch, *, profiled=True):
+def repository_artifact_inspector(
+    tmp_path, monkeypatch, *, profiled=True, repository_reader=None
+):
     import loopx.capabilities.manager_context.repository_evidence as repository_evidence
     from loopx.capabilities.manager_context import authority
+    from loopx.capabilities.manager_context.repository_evidence_github import RepositoryEvidenceError
+
+    if repository_reader is None:
+        def repository_reader(**_):
+            raise RepositoryEvidenceError("provider_credentials_unavailable")
 
     profiles = {
         "research": {
@@ -363,10 +370,11 @@ def repository_artifact_inspector(tmp_path, monkeypatch, *, profiled=True):
                  "context_delegation": delegation},
         registry_path=registry, runtime_root=tmp_path, owner_scope=True,
         scope_valid=lambda: True, record=records.append,
+        repository_reader=repository_reader,
     ), records
 
 
-def test_repository_artifact_gap_routes_only_by_profile_capability(monkeypatch, tmp_path):
+def test_repository_artifact_failure_is_typed_and_routing_remains_advisory(monkeypatch, tmp_path):
     tool, records = repository_artifact_inspector(tmp_path, monkeypatch)
     result = tool.read(TOOL_NAME, {
         "view": "repository_artifact", "goal_id": "alpha",
@@ -375,14 +383,16 @@ def test_repository_artifact_gap_routes_only_by_profile_capability(monkeypatch, 
     assert result["ok"] and result["unknown"]
     assert result["evidence"] == {
         "status": "unavailable",
-        "reason_code": "repository_artifact_not_available_in_core",
-        "artifact_read_status": "not_read",
-        "reviewed_artifact": False,
+        "reason_code": "provider_credentials_unavailable",
+        "artifact_read_status": "failed",
+        "source_artifact_read": False,
         "claim_policy": "do_not_infer_artifact_facts",
     }
     assert result["routing"]["recommended_handoff"] == {
         "goal_id": "alpha", "agent_id": "steward",
     }
+    assert result["routing"]["handoff_policy"] == "explicit_implementation_validation_or_extended_investigation_only"
+    assert result["source"]["provider_contacted"]
     assert not result["source"]["external_read_performed"]
     assert records == [result]
 
