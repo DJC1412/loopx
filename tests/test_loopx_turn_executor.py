@@ -24,7 +24,9 @@ from loopx.control_plane.turn_driver.executor import (
     BuiltInHostError,
     LOOPX_TURN_JOURNAL_SCHEMA_VERSION,
     _task_validation_stage,
+    turn_journal_path,
 )
+from loopx.control_plane.turn_driver.host_binding import managed_executor_binding
 from loopx.control_plane.turn_driver.settlement import execute_turn_driver_settlement
 from loopx.control_plane.turn_driver.transaction import TRANSACTION_PHASES
 
@@ -75,6 +77,25 @@ def _codex_plan() -> dict[str, object]:
         host="codex-cli",
         execution_mode="isolated-headless",
     )
+
+
+def _managed_plan(*, runtime_available: bool) -> dict[str, object]:
+    """One dsh plan carrying the executor readback the command layer attaches."""
+
+    plan = _plan()
+    envelope = plan["turn_envelope"]
+    assert isinstance(envelope, dict)
+    managed = build_loopx_turn_plan(
+        envelope,
+        host="dsh",
+        execution_mode="isolated-headless",
+    )
+    managed["managed_executor"] = managed_executor_binding(
+        "dsh",
+        environ={"DEEPSEEK_API_KEY": "fixture-operator-credential"},
+        module_probe=lambda _module: runtime_available,
+    )
+    return managed
 
 
 def _adaptive_observation_plan(
@@ -2501,3 +2522,74 @@ def test_run_once_resumes_scheduler_without_repeating_committed_effects(
         turn_key=str(transaction["turn_key"]),
     )
     assert audited["last_recovery"] == resumed["recovery"]
+
+
+def test_run_once_fails_closed_when_the_managed_executor_cannot_launch(tmp_path):
+    plan = _managed_plan(runtime_available=False)
+    transaction = plan["transaction"]
+    assert isinstance(transaction, dict)
+    runtime_root = tmp_path / "runtime"
+    journal = turn_journal_path(
+        runtime_root,
+        goal_id="fixture-goal",
+        turn_key=str(transaction["turn_key"]),
+    )
+
+    payload = run_loopx_turn_once(
+        plan,
+        host_runner=lambda _request: pytest.fail("an unavailable executor must not run"),
+        project=tmp_path,
+        runtime_root=runtime_root,
+        goal_id="fixture-goal",
+        timeout_seconds=5,
+        execute=True,
+    )
+
+    assert payload["ok"] is False
+    assert payload["status"] == "unavailable"
+    assert payload["reason"] == "dsh_runtime_unavailable"
+    assert payload["effects"] == {
+        "host_invoked": False,
+        "state_written": False,
+        "quota_spent": False,
+        "scheduler_acknowledged": False,
+    }
+    assert payload["quota_slot_spend_count"] == 0
+    assert payload["managed_executor"] == plan["managed_executor"]
+    assert journal.exists() is False
+
+
+def test_run_once_preview_reports_the_managed_executor_without_refusing(tmp_path):
+    plan = _managed_plan(runtime_available=False)
+
+    payload = run_loopx_turn_once(
+        plan,
+        host_runner=lambda _request: pytest.fail("preview must not run the host"),
+        project=tmp_path,
+        runtime_root=tmp_path / "runtime",
+        goal_id="fixture-goal",
+        timeout_seconds=5,
+        execute=False,
+    )
+
+    assert payload["ok"] is True
+    assert payload["status"] == "preview"
+    assert payload["managed_executor"]["available"] is False
+    assert payload["managed_executor"]["unavailable_reason"] == "dsh_runtime_unavailable"
+
+
+def test_run_once_does_not_refuse_a_launchable_managed_executor(tmp_path):
+    plan = _managed_plan(runtime_available=True)
+
+    # The refusal is the only guard under test here: without writeback, spend,
+    # and scheduler callbacks the executor stops at its own contract instead.
+    with pytest.raises(ValueError, match="requires writeback, spend, and scheduler"):
+        run_loopx_turn_once(
+            plan,
+            host_runner=lambda _request: pytest.fail("host must not run without callbacks"),
+            project=tmp_path,
+            runtime_root=tmp_path / "runtime",
+            goal_id="fixture-goal",
+            timeout_seconds=5,
+            execute=True,
+        )

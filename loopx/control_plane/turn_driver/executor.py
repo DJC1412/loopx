@@ -778,6 +778,11 @@ def _execution_payload(
         "status": journal.get("status"),
         "execution_mode": planned_host.get("execution_mode"),
         "host": journal.get("host"),
+        **(
+            {"managed_executor": dict(plan["managed_executor"])}
+            if isinstance(plan.get("managed_executor"), Mapping)
+            else {}
+        ),
         "result_kind": journal.get("result_kind"),
         "validation": journal.get("task_validation"),
         "receipt": journal.get("receipt"),
@@ -1306,6 +1311,26 @@ def run_loopx_turn_once(
         "quota_spent": False,
         "scheduler_acknowledged": False,
     }
+    managed_executor = (
+        plan.get("managed_executor")
+        if isinstance(plan.get("managed_executor"), Mapping)
+        else {}
+    )
+    if execute and managed_executor.get("available") is False:
+        # Fail closed on an executor LoopX can prove cannot launch here: report
+        # the planned executor and stop before the journal, the host, and quota
+        # so the Turn cannot quietly move onto a different executor instead.
+        return _execution_payload(
+            plan,
+            {
+                "status": "unavailable",
+                "host": host_projection,
+                "reason": str(managed_executor.get("unavailable_reason") or ""),
+            },
+            execute=True,
+            replayed=False,
+            effects=empty_effects,
+        )
     if not execute:
         preview = {
             "schema_version": LOOPX_TURN_JOURNAL_SCHEMA_VERSION,

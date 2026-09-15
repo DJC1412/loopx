@@ -55,6 +55,7 @@ from ..control_plane.turn_driver import (
     run_loopx_turn_once,
     selected_turn_todo,
 )
+from ..control_plane.turn_driver.host_binding import managed_executor_binding
 from ..quota import spend_quota_slot
 from ..state_refresh import refresh_state_run
 from ..status import AUTONOMOUS_REPLAN_PERIODIC_LOOKBACK, collect_status
@@ -238,6 +239,14 @@ def handle_turn_command(
             session_binding=session_binding,
             turn_instance_id=args.turn_instance_id,
             iteration_context_policy=args.iteration_context.replace("-", "_"),
+        )
+        # The executor readback names where this Turn's model work runs and
+        # whether that host can launch here, so a caller never has to infer it
+        # from the host id. The explicit runner hook is the one launchability
+        # fact only this command layer knows.
+        payload["managed_executor"] = managed_executor_binding(
+            args.host,
+            dsh_runner_configured=bool(getattr(args, "dsh_runner", None)),
         )
         if (
             args.turn_command == "run-once"

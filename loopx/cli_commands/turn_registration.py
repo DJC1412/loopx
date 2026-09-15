@@ -5,7 +5,10 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable
 
-from ..control_plane.turn_driver.host_binding import resolve_default_turn_host
+from ..control_plane.turn_driver.host_binding import (
+    HOST_WITH_OPERATOR_CREDENTIAL,
+    resolve_default_turn_host,
+)
 from ..paths import default_public_scan_root
 
 # Explicit host choices stay per-command: planning may name any host the Turn
@@ -47,10 +50,19 @@ def register_turn_commands(
         help="Build one typed read-only host decision without launching or writing.",
     )
     add_subcommand_format(plan)
+    # The default host and the default execution mode are one decision: a
+    # managed host runs bounded headless Turns, so pairing it with a visible
+    # interactive mode would produce a default plan that cannot be scheduled.
+    resolved_default_host = resolve_default_turn_host()
     _add_turn_decision_arguments(
         plan,
-        default_host=resolve_default_turn_host(),
+        default_host=resolved_default_host,
         host_choices=list(PLANNED_TURN_HOST_CHOICES),
+        default_execution_mode=(
+            "isolated-headless"
+            if resolved_default_host == HOST_WITH_OPERATOR_CREDENTIAL
+            else "interactive-visible"
+        ),
     )
     plan.add_argument(
         "--include-transaction-detail",

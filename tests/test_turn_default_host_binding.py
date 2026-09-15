@@ -75,3 +75,25 @@ def test_explicit_host_still_wins_over_the_credential_default(monkeypatch):
     )
 
     assert args.host == "generic-cli"
+
+
+@pytest.mark.parametrize("command", ["plan", "run-once"])
+def test_default_execution_mode_matches_the_resolved_default_host(
+    command, monkeypatch
+):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-operator")
+
+    managed = build_parser().parse_args(_turn_argv(command))
+
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    individual = build_parser().parse_args(_turn_argv(command))
+
+    # A managed host plans bounded headless Turns; pairing it with a visible
+    # interactive mode would make the shipped default unusable. run-once only
+    # ships the isolated-headless mode, so it keeps that mode either way.
+    assert managed.host == HOST_WITH_OPERATOR_CREDENTIAL
+    assert managed.execution_mode == "isolated-headless"
+    assert individual.host == HOST_WITHOUT_OPERATOR_CREDENTIAL
+    assert individual.execution_mode == (
+        "interactive-visible" if command == "plan" else "isolated-headless"
+    )
