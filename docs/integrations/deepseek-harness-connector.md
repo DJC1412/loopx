@@ -66,6 +66,28 @@ appropriate. See the
 [DeepSeek Harness Python SDK reference](https://github.com/deepseek-ai/deepseek-harness/blob/master/python/sdk/README.md)
 for runtime selection and configuration.
 
+## Default Host Selection
+
+`loopx turn plan` and `loopx turn run-once` bind their default `--host` to the
+operator's own provider credential rather than to the harness alone:
+
+| Operator configuration | Default `--host` |
+| --- | --- |
+| `DEEPSEEK_API_KEY` is set to a non-empty value | `dsh` |
+| no such credential is configured | `codex-cli` |
+
+A machine with an operator-supplied model credential therefore runs governed
+Turns against that endpoint instead of an individual CLI subscription, and a
+machine without one keeps the Codex CLI host. Surrounding whitespace does not
+count as a configured credential, so an exported-but-empty variable stays on
+the `codex-cli` default.
+
+`DEEPSEEK_BASE_URL` chooses the endpoint the credential is used against; on its
+own it does not change the default host. An explicit `--host` always wins, and
+the resolved value is what `loopx turn plan` reports back. `loopx turn run-once`
+accepts the `codex-cli`, `dsh`, and `generic-cli` hosts it ships adapters for;
+`loopx turn plan` additionally accepts the planning-only `claude-code` host.
+
 ## Onboard
 
 ```bash
