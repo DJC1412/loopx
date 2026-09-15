@@ -53,7 +53,7 @@ def register_turn_commands(
     # The default host and the default execution mode are one decision: the
     # selected managed host runs bounded headless Turns, so pairing it with a
     # visible interactive mode would produce a default plan that cannot be
-    # scheduled. The mode follows the *selected* host, never the environment.
+    # scheduled. The mode follows the *selected* host, whatever resolved it.
     resolved_default_host = resolve_default_turn_host()
     resolved_default_execution_mode = (
         "isolated-headless"

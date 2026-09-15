@@ -1,15 +1,22 @@
-"""Explicit Turn host selection and managed executor readback.
+"""Credential-resolved default Turn host and managed executor readback.
 
-The Turn host is **selected, never inferred**. LoopX ships one explicit product
-default, the operator may override it explicitly, and a discovered credential
-only authenticates the host that was already selected. The presence of
-``DEEPSEEK_API_KEY`` therefore never changes where a Turn runs; setting it is
-what makes the selected managed host authenticated.
+The Turn host is **selected, never inferred from a launch-time surprise**. An
+explicit ``--host`` or ``LOOPX_TURN_HOST`` is always honoured, and the shipped
+default is resolved once from the operator's own credential facts.
 
-- ``MANAGED_DEFAULT_TURN_HOST`` (``dsh``) is the shipped default: the managed
-  execution unit the steward drives runs on the DeepSeek Harness host.
-- ``LOOPX_TURN_HOST`` re-points that default without repeating ``--host``.
-- an explicit ``--host`` always wins over both.
+- an operator credential (``DEEPSEEK_API_KEY``) selects the managed default
+  ``dsh``: the managed execution unit the steward drives runs on the DeepSeek
+  Harness host, billed to the operator's own endpoint;
+- with no credential configured the individual default ``codex-cli`` applies
+  instead, because the managed host cannot be authenticated without one -- and
+  refusing to run is worse than running the individual CLI host this machine
+  can already use;
+- an explicit selection is never re-pointed by a credential: configuring or
+  removing ``DEEPSEEK_API_KEY`` moves the shipped default only, never a host
+  the operator already selected.
+
+Both defaults are read back with their source, so an operator can always tell a
+product default from an explicit selection instead of inferring it.
 
 ``managed_executor_binding`` turns the selection plus the operator environment
 into the readback a caller can act on before a Turn runs: which executor the
@@ -39,14 +46,18 @@ from .execution_profile import (
     managed_profile_unavailable_reason,
 )
 
-# Explicit selection surfaces. The default is a product decision recorded here
-# once; nothing in this module reads the environment to decide *which* host runs.
+# The shipped default is resolved from one fact: whether the operator configured
+# a credential for the managed endpoint. An explicit selection always wins over
+# this default, and nothing else in this module reads the environment to decide
+# *which* host runs.
 MANAGED_TURN_HOST = "dsh"
 INDIVIDUAL_TURN_HOST = "codex-cli"
 MANAGED_DEFAULT_TURN_HOST = MANAGED_TURN_HOST
+INDIVIDUAL_DEFAULT_TURN_HOST = INDIVIDUAL_TURN_HOST
 TURN_HOST_ENV_VAR = "LOOPX_TURN_HOST"
-TURN_HOST_SOURCE_PRODUCT_DEFAULT = "product_default"
 TURN_HOST_SOURCE_EXPLICIT_CONFIG = "explicit_config"
+TURN_HOST_SOURCE_OPERATOR_CREDENTIAL = "operator_credential"
+TURN_HOST_SOURCE_NO_OPERATOR_CREDENTIAL = "no_operator_credential"
 
 MANAGED_EXECUTOR_BINDING_SCHEMA_VERSION = "managed_executor_binding_v0"
 # Executor kinds name where a Turn's model work is billed and bounded rather
@@ -84,15 +95,21 @@ def selected_turn_host(
 ) -> tuple[str, str]:
     """Return the selected default Turn host and the source that selected it.
 
-    Selection is environment-independent: the shipped product default applies
-    until the operator re-points it explicitly with ``LOOPX_TURN_HOST``. A
-    configured credential is never a selection signal.
+    An explicit ``LOOPX_TURN_HOST`` wins. Otherwise the operator's own
+    credential facts resolve the shipped default: a configured operator
+    credential runs the managed host on that credential, and its absence runs
+    the individual CLI host instead of a managed host nothing can authenticate.
     """
 
     explicit = env_text(TURN_HOST_ENV_VAR, environ)
     if explicit:
         return explicit, TURN_HOST_SOURCE_EXPLICIT_CONFIG
-    return MANAGED_DEFAULT_TURN_HOST, TURN_HOST_SOURCE_PRODUCT_DEFAULT
+    if configured_operator_credential(environ):
+        return MANAGED_DEFAULT_TURN_HOST, TURN_HOST_SOURCE_OPERATOR_CREDENTIAL
+    return (
+        INDIVIDUAL_DEFAULT_TURN_HOST,
+        TURN_HOST_SOURCE_NO_OPERATOR_CREDENTIAL,
+    )
 
 
 def resolve_default_turn_host(environ: Mapping[str, str] | None = None) -> str:
