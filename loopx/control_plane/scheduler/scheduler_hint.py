@@ -634,6 +634,7 @@ class _SchedulerHintBuilder:
     codex_app_scheduler_state: dict[str, Any] | None
     codex_app_current_rrule: Any
     codex_app_automation_id: Any
+    codex_app_prompt_binding: Any
     include_detail: bool
 
     def _identity_value(self, path: str) -> Any:
@@ -881,6 +882,10 @@ class _SchedulerHintBuilder:
             },
             "no_spend_for_cadence_change": True,
         }
+        if self.codex_app_prompt_binding:
+            # The installed body decides which rules the next wake follows, so a
+            # stale wrapper is part of the observed App automation state.
+            app_automation["prompt_binding"] = dict(self.codex_app_prompt_binding)
         stateful_backoff = app_automation["stateful_backoff"]
         if host_update_failures:
             stateful_backoff["host_update_failures"] = [
@@ -1153,6 +1158,7 @@ def build_scheduler_hint(
     available_capabilities: Any = None,
     codex_app_current_rrule: Any = None,
     codex_app_automation_id: Any = None,
+    codex_app_prompt_binding: Any = None,
     scheduler_execution_context: (
         Mapping[str, Any] | SchedulerExecutionContextResolution | None
     ) = None,
@@ -1342,6 +1348,7 @@ def build_scheduler_hint(
         codex_app_scheduler_state=codex_app_scheduler_state,
         codex_app_current_rrule=codex_app_current_rrule,
         codex_app_automation_id=codex_app_automation_id,
+        codex_app_prompt_binding=codex_app_prompt_binding,
         include_detail=include_detail,
     )
     if arbitration.disposition == SchedulerDisposition.AGENT_MONITOR_ONLY_WAIT:

@@ -537,3 +537,206 @@ def test_exact_legacy_host_loader_upgrades_to_v2_without_dropping_explicit_polic
     _set_fixture_prompt(path, database, malformed)
     rejected = lifecycle.snapshot(registry=registry, home=home)["entries"][0]
     assert rejected["status"] != "current" and not rejected["automatic_eligible"]
+
+
+def test_installed_prompt_binding_reviews_a_frozen_body_without_writing(tmp_path):
+    home, path, database, registry, prompt = fixture(tmp_path)
+    original = path.read_bytes()
+    binding = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    assert binding["status"] == "adoption_required"
+    assert binding["automation_id"] == "watch"
+    assert binding["goal_id"] == "fixture-goal" and binding["agent_id"] == "agent-a"
+    assert binding["host_action"] == upgrade.PROMPT_BINDING_ADOPT_ACTION
+    assert binding["host_action_contract"] == upgrade.PROMPT_BINDING_HOST_ACTION_CONTRACT
+    assert binding["spend_policy"] == upgrade.PROMPT_BINDING_SPEND_POLICY
+    assert binding["prompt_sha256"] == upgrade.digest(prompt)
+    request = binding["api_update_request"]
+    assert request["tool"] == "automation_update"
+    assert request["expected_prompt_sha256"] == upgrade.digest(prompt)
+    assert request["arguments"] == {
+        "mode": "update", "id": "watch", "kind": "heartbeat",
+        "name": "Fixture watch", "status": "PAUSED", "rrule": "FREQ=HOURLY",
+        "targetThreadId": "thread-a", "notificationPolicy": "failed_runs_only",
+        "prompt": upgrade.bootstrap_prompt(registry=registry, goal_id="fixture-goal",
+                                           agent_id="agent-a"),
+    }
+    assert binding["desired_sha256"] == upgrade.digest(request["arguments"]["prompt"])
+    # The stale body is the private local store; only its digest travels.
+    assert prompt not in json.dumps(binding)
+    assert path.read_bytes() == original
+
+
+def test_installed_prompt_binding_keeps_a_bound_loader_current(tmp_path):
+    registry_other = tmp_path / "other" / "registry.json"
+    prompt = upgrade.bootstrap_prompt(registry=registry_other, goal_id="fixture-goal",
+                                      agent_id="agent-a")
+    home, path, database, registry, _ = fixture(tmp_path)
+    _set_fixture_prompt(path, database, prompt)
+    binding = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    # A recognized loader is never retargeted to the caller's registry.
+    assert binding["status"] == "current"
+    assert binding["host_action"] == "none"
+    assert "api_update_request" not in binding
+
+
+def test_installed_prompt_binding_offers_only_the_v2_wrapper_upgrade(tmp_path):
+    registry_path = tmp_path / "registry.json"
+    prompt = upgrade.bootstrap_prompt(registry=registry_path, goal_id="fixture-goal",
+                                      agent_id="agent-a").replace(
+        upgrade.BOOTSTRAP, upgrade._LEGACY_BOOTSTRAP, 1).removesuffix(
+        upgrade._BOOTSTRAP_INSTRUCTION) + upgrade._LEGACY_INSTRUCTION
+    home, path, database, registry, _ = fixture(tmp_path)
+    _set_fixture_prompt(path, database, prompt)
+    binding = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    assert binding["status"] == "adoption_required"
+    assert binding["api_update_request"]["arguments"]["prompt"].startswith(
+        "LoopX managed heartbeat bootstrap v2\n"
+    )
+
+
+def test_turn_binding_reuses_the_update_time_request(tmp_path, monkeypatch):
+    from loopx.control_plane.heartbeat import installed_prompt_update as lifecycle
+    from loopx.heartbeat_prompt import build_heartbeat_prompt
+    home, path, database, registry, _ = fixture(tmp_path)
+    owned = build_heartbeat_prompt(goal_id="fixture-goal", agent_id="agent-a",
+        registered_agents=["agent-a"], runtime_profile="codex_app_heartbeat",
+        thin=True)["task_body"]
+    _set_fixture_prompt(path, database, owned)
+    binding = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    before = lifecycle.snapshot(registry=registry, home=home)
+    assert before["entries"][0]["automatic_eligible"] is True
+    monkeypatch.setattr(lifecycle.sys, "platform", "linux")
+    deferred = lifecycle.reconcile(before=before, registry=registry, home=home)
+    api_updates = deferred["api_updates"]
+    # One reviewed prompt-only request shape, whichever entrypoint finds it.
+    assert len(api_updates) == 1
+    assert api_updates[0]["arguments"] == binding["api_update_request"]["arguments"]
+    assert api_updates[0]["expected_prompt_sha256"] == binding["prompt_sha256"]
+
+
+def test_installed_prompt_binding_fails_open_per_lane(tmp_path):
+    # No installed host store at all.
+    empty = upgrade.installed_prompt_binding(registry=tmp_path / "registry.json",
+        home=tmp_path / "missing", goal_id="fixture-goal", agent_id="agent-a")
+    assert empty["status"] == "unavailable" and empty["host_action"] == "none"
+    home, path, database, registry, _ = fixture(tmp_path)
+    # Another registered agent is not this lane.
+    other = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-other")
+    assert other["status"] == "absent" and "api_update_request" not in other
+    # Disagreeing stores are reconciled through the App, never by prompt adoption.
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE automations SET target_thread_id='thread-b'")
+    conflicted = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    assert conflicted["status"] == "blocked"
+    assert "api_update_request" not in conflicted
+
+
+def test_installed_prompt_binding_clears_after_the_reviewed_request_is_applied(tmp_path):
+    home, path, database, registry, _ = fixture(tmp_path)
+    binding = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    upgrade.apply_offline(home=home, automation_id="watch",
+        expected_prompt_sha256=binding["prompt_sha256"],
+        desired_prompt=binding["api_update_request"]["arguments"]["prompt"])
+    settled = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    assert settled["status"] == "current"
+    assert settled["prompt_sha256"] == binding["desired_sha256"]
+
+
+def _add_look_alike(home: Path, database: Path, automation_id: str, prompt: str, *,
+                    row_kind: str = "heartbeat", thread_id: str = "thread-a") -> None:
+    """Add a second record that names the lane but is not a confirmable heartbeat."""
+
+    path = home / "automations" / automation_id / "automation.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text('version = 1\n' + f'id = "{automation_id}"\nname = "Look alike"\n'
+                    'kind = "heartbeat"\nstatus = "PAUSED"\n'
+                    f'target_thread_id = "{thread_id}"\nrrule = "FREQ=HOURLY"\n'
+                    'prompt = ' + json.dumps(prompt) + "\n", encoding="utf-8")
+    with sqlite3.connect(database) as connection:
+        connection.execute("INSERT INTO automations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (automation_id, row_kind, prompt, "PAUSED", thread_id, "FREQ=HOURLY", None, 1, 2))
+
+
+def test_installed_prompt_binding_keeps_the_confirmable_record_in_front(tmp_path):
+    home, path, database, registry, prompt = fixture(tmp_path)
+    view = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    assert view["status"] == "adoption_required"
+    assert "unresolved_automation_ids" not in view
+    # A converted cron row that only mentions the lane must not hide the live record.
+    _add_look_alike(home, database, "legacy-lookalike", prompt, row_kind="cron")
+    view = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    assert view["status"] == "adoption_required"
+    assert view["automation_id"] == "watch"
+    assert view["api_update_request"]["arguments"]["id"] == "watch"
+
+
+def test_installed_prompt_binding_reports_two_confirmable_records_as_ambiguous(tmp_path):
+    home, path, database, registry, prompt = fixture(tmp_path)
+    _add_look_alike(home, database, "watch-2", prompt)
+    view = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    assert view["status"] == "ambiguous"
+    assert view["automation_ids"] == ["watch", "watch-2"]
+    assert "api_update_request" not in view
+
+
+def test_installed_prompt_binding_follows_the_automation_bound_to_the_turn(tmp_path):
+    home, path, database, registry, prompt = fixture(tmp_path)
+    _add_look_alike(home, database, "watch-2", prompt, thread_id="thread-b")
+    # Several confirmable records claim the lane: only the bound one drives it.
+    bound = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a", thread_id="thread-a")
+    assert bound["status"] == "adoption_required"
+    assert bound["automation_id"] == "watch"
+    unbound = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a", thread_id="thread-c")
+    assert unbound["status"] == "ambiguous"
+    assert "api_update_request" not in unbound
+
+
+def test_installed_prompt_binding_names_the_unconfirmed_records(tmp_path):
+    home, path, database, registry, prompt = fixture(tmp_path)
+    _add_look_alike(home, database, "legacy-lookalike", prompt, row_kind="cron")
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE automations SET kind='cron' WHERE id='watch'")
+    blocked = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    assert blocked["status"] == "blocked"
+    assert blocked["unresolved_automation_ids"] == ["legacy-lookalike", "watch"]
+    assert "api_update_request" not in blocked
+
+
+def test_installed_prompt_binding_reports_a_confirmed_but_unmanaged_body(tmp_path):
+    home, path, database, registry, prompt = fixture(tmp_path)
+    registered = json.loads(registry.read_text())
+    registered["goals"][0]["registered_agents"] = []
+    registry.write_text(json.dumps(registered))
+    view = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    assert view["status"] == "unmanaged" and view["automation_id"] == "watch"
+    assert "api_update_request" not in view and "desired_sha256" not in view
+
+
+def test_installed_prompt_binding_survives_an_ambiguous_installed_body(tmp_path):
+    home, path, database, registry, prompt = fixture(tmp_path)
+    ambiguous = prompt + " --agent-id agent-b"
+    path.write_text(upgrade._replace_prompt(path.read_text(), ambiguous))
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE automations SET prompt=?", (ambiguous,))
+    # A body the owner refuses to classify must degrade to a status, never raise
+    # out of the read-only observation the live turn contract depends on.
+    view = upgrade.installed_prompt_binding(registry=registry, home=home,
+        goal_id="fixture-goal", agent_id="agent-a")
+    assert view["status"] == "blocked" and view["automation_id"] == "watch"
+    assert "ambiguous Goal/agent bindings" in view["reason"]
+    assert "api_update_request" not in view and "desired_sha256" not in view

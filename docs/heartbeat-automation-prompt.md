@@ -637,7 +637,13 @@ heartbeats should search/use `automation_update` when available. If
 `scheduler_hint.app_automation.host_action=pause_or_delete_current_heartbeat`: in
 that terminal case, call `automation_update` once to pause the current
 heartbeat (delete only if pause is unavailable), verify the host result, spend
-no quota, and end the turn without a scheduler ACK. Otherwise call it only when
+no quota, and end the turn without a scheduler ACK. When the same lane reports
+`scheduler_hint.app_automation.prompt_binding.host_action=adopt_managed_bootstrap`,
+its installed body is not the current managed loader: apply the reported
+prompt-only `api_update_request` through `automation_update` once after checking
+the reported prompt hash, read the automation back, and spend no quota. That
+request preserves the binding, schedule and status and is independent of
+`automation_update` cadence handling. Otherwise call it only when
 `scheduler_hint.app_automation.stateful_backoff.apply_needed=true` and
 `scheduler_hint.app_automation.recommended_rrule` is present. After a successful
 RRULE update, run `loopx` with
@@ -815,7 +821,10 @@ automations can all share the same LoopX quota guard without hard-coding
 different wait loops. Host implementations should first honor a terminal
 `app_automation.host_action=pause_or_delete_current_heartbeat` by stopping the
 current heartbeat once, verifying the result, and ending without scheduler ACK
-or quota spend. Otherwise they should read the compact
+or quota spend, and they should honor
+`app_automation.prompt_binding.host_action=adopt_managed_bootstrap` by applying
+that reported prompt-only request once, verifying the readback, and spending no
+quota. Otherwise they should read the compact
 `app_automation.stateful_backoff` packet, call `automation_update` only when
 `apply_needed=true`, and then let `quota scheduler-ack-current` persist the
 applied RRULE state from the latest scheduler hint without spending quota. A

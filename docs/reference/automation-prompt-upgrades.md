@@ -68,6 +68,31 @@ read-only preview, not the upgrade executor. Do not infer a manual-only policy
 from its `adoption_required` status. Custom or inconsistent entries still need
 review; automatic prompt migration never grants scheduler or thread authority.
 
+## Live turn observation
+
+Install-time reconciliation is one-shot: a pending adoption that nobody applies
+would otherwise never reappear, and a repaired or resumed lane can keep running
+yesterday's frozen body. `quota should-run` therefore reports the caller's own
+installed automation in `scheduler_hint.app_automation.prompt_binding` (schema
+`codex_app_automation_prompt_binding_v0`: `current`, `adoption_required`,
+`blocked`, `ambiguous`, `absent`, or `unavailable`). A stale entry adds
+`host_action=adopt_managed_bootstrap`, its no-spend policy, both prompt digests,
+and the same reviewed prompt-only `automation_update` request that update-time
+reconciliation returns, so the obligation survives in the live contract instead
+of a completed report.
+
+The observation is bounded, read-only, and fail-open: an unreadable or
+disagreeing store reports a status and never fails the turn, and a lane without
+an installed automation projects no field at all. Several installed automations
+can claim one Goal/agent, so the observer follows the one bound to the current
+thread and classifies only a body whose TOML and App records agree; unconfirmed
+look-alikes are named only when nothing else is confirmable. A recognized loader
+is always compared with its own binding, because a turn must never retarget another Codex
+home, registry, runtime root, or CLI binary; only an unrecognized body is
+reviewed against the caller's registry. Adoption stays explicit and
+non-blocking: it is not delivery permission, not a scheduler authority, and a
+deliberate owner-pinned body is reviewed rather than overwritten.
+
 On the qualified macOS heartbeat schema, direct migration requires the App
 closed. The adapter holds a SQLite writer transaction through TOML delivery,
 compares the entire previewed manifest, preserves every non-prompt field, and
@@ -202,3 +227,15 @@ gh 登录，仍失败则明确要求已核验 SHA，不切换分支或静默覆�
 日程、暂停状态、模型、线程、通知偏好和历史均不迁移。
 不支持的存储仍需原生 API；运行中的本轮不热切换。普通测试不消耗模型 token，
 真实模型发布资格仍需独立评测，不能由迁移成功推断。
+
+安装期对账只报告一次，因此 `quota should-run` 每轮都把本轮 lane 已安装的
+automation 观测投影为 `scheduler_hint.app_automation.prompt_binding`：状态为
+`current`/`adoption_required`/`blocked`/`ambiguous`/`absent`/`unavailable`。
+非当前 loader 时附带 `host_action=adopt_managed_bootstrap`、no-spend 策略、
+两个 prompt 摘要，以及与升级期完全相同的、仅改 prompt 的
+`automation_update` 请求，使采纳义务留在实时契约里，而不只存在于一次性报告。
+该观测只读、有界、失败即降级，未安装 automation 的 lane 不投影该字段；已识别
+的 loader 一律按自身绑定比对，turn 不会改标到其他 home、registry、runtime root
+或 CLI。同一 Goal/agent 可能装了多个 automation，因此观测跟随当前 thread 绑定的
+那一个，并且只对 TOML 与 App 记录一致的 body 分类；未确认的同名记录仅在没有可确认
+body 时才列出。采纳仍需显式执行，既不授予交付权限也不接管调度。

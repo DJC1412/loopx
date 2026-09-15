@@ -14,7 +14,14 @@ import subprocess
 import sys
 import tempfile
 
-from .automation_upgrade import SCHEMA, _atomic, apply_offline, bootstrap_binding, build_plan
+from .automation_upgrade import (
+    SCHEMA,
+    _atomic,
+    apply_offline,
+    automation_update_request,
+    bootstrap_binding,
+    build_plan,
+)
 from .bootstrap_prompt import host_bootstrap_binding
 
 
@@ -114,14 +121,9 @@ def reconcile(*, before: dict, registry: Path, home: Path,
                     manifest = {}
                 required = {"name", "status", "rrule", "target_thread_id"}
                 if required <= manifest.keys() and manifest.get("prompt") == now["current_prompt"]:
-                    api_updates.append({"tool": "automation_update",
-                        "expected_prompt_sha256": now["prompt_sha256"],
-                        "precondition": "View the same automation; verify this prompt hash and all preserved fields before update; read back afterward.",
-                        "arguments": {"mode": "update", "id": identifier, "kind": "heartbeat",
-                            "name": manifest["name"], "status": manifest["status"],
-                            "rrule": manifest["rrule"], "targetThreadId": manifest["target_thread_id"],
-                            "notificationPolicy": manifest.get("notification_policy"),
-                            "prompt": now["desired_prompt"]}})
+                    api_updates.append(automation_update_request(automation_id=identifier,
+                        manifest=manifest, expected_prompt_sha256=now["prompt_sha256"],
+                        desired_prompt=now["desired_prompt"]))
         results.append(result)
     pending = any(result["status"] not in {"current", "updated", "unmanaged", "missing"} for result in results)
     return {"ok": not pending, "status": "attention_required" if pending else "current", "results": results,

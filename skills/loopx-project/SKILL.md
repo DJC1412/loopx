@@ -582,7 +582,13 @@ search/use `automation_update` when available. If
 `automation_update` once to pause the current heartbeat (delete only when the
 host cannot pause), verify the host result, spend no quota, and end the turn.
 This terminal host action takes precedence over RRULE handling and requires no
-scheduler ACK. Otherwise use `automation_update` only when
+scheduler ACK. When the same lane reports
+`scheduler_hint.app_automation.prompt_binding.host_action=adopt_managed_bootstrap`,
+the installed automation body is a frozen or older wrapper: re-read the live
+hint, apply its prompt-only `api_update_request` once through `automation_update`
+after checking the reported prompt hash, read the automation back, and spend no
+quota. Prompt adoption preserves the binding, schedule, and status, and it is
+separate from cadence handling. Otherwise use `automation_update` only when
 `scheduler_hint.app_automation.stateful_backoff.apply_needed=true` and
 `scheduler_hint.app_automation.recommended_rrule` is present. After a successful
 RRULE update, run `loopx` with
