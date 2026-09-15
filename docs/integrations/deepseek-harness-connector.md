@@ -101,6 +101,7 @@ inferring it from a host id:
   "executor_kind": "managed",
   "credential_env": "DEEPSEEK_API_KEY",
   "endpoint_env": "DEEPSEEK_BASE_URL",
+  "operator_credential_bound": true,
   "available": true,
   "unavailable_reason": null
 }
@@ -109,9 +110,23 @@ inferring it from a host id:
 `executor_kind` names where the Turn's model work is billed and bounded:
 `managed` for a host bound to an operator credential, `individual` for a host
 that runs on one person's own CLI login, and `generic` for a caller-supplied
-adapter command. `available` is `false` only when LoopX can prove the planned
-host cannot launch here; it is `null` for executors this projection does not
-probe rather than an unproven claim.
+adapter command. `operator_credential_bound` is the narrower claim: it is `true`
+only when the operator credential or an explicit `--dsh-runner` is configured,
+so an explicitly selected `dsh` host that would fall back to whatever the dsh
+home configures reports `executor_kind: managed` with
+`operator_credential_bound: false` instead of claiming a credential it does not
+hold. `available` is `false` only when LoopX can prove the planned host cannot
+launch here; it is `null` for executors this projection does not probe rather
+than an unproven claim.
+
+The credential-resolved default is the flow an operator uses without naming a
+host: `loopx turn run-once --goal-id <goal> --agent-id <agent> --project <dir>`
+starts the managed `dsh` Turn when an operator credential is configured, and
+stays on the individual `codex-cli` host when none is. `--host` still wins when
+a caller needs another executor. `examples/loopx-turn-managed-default-flow-smoke.py`
+qualifies exactly that default flow end to end against a local mock model
+endpoint, including the readback and the fail-closed managed-runtime case, and
+consumes no operator key or individual CLI subscription.
 
 A `run-once --execute` whose planned host reports `available: false` fails
 closed: it reports the status `unavailable` with the typed
