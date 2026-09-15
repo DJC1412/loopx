@@ -62,7 +62,7 @@ dated 2026-09-15 and is written to land with the managed stack:
 | --- | --- | --- | --- |
 | Default managed execution host | LoopX Turn plus the `dsh` host adapter, bound to an operator-supplied model endpoint | shipped product default, credential-resolved: the managed `dsh` host when the operator credential is configured, the individual `codex-cli` host when it is not; `LOOPX_TURN_HOST` re-points whichever resolved and an explicit `--host` wins (PR #4443, default resolution with this change) | keep the typed host request/result, independent validation, and the operator-owned credential boundary; do not replace it without an equal or stronger contract |
 | Steward channel executor | the interactive Chat transport the steward answers on | shipped product default, credential-conditional: the managed host (`dsh`) when the operator credential is configured, `codex` when it is not; `LOOPX_MANAGER_ENDPOINT` re-points it and an explicit endpoint wins; selection landed in PR #4446, the conditional default and the segment transport land with this change | the segment transport's typed limits (no streaming, no cross-turn host session, read-only sandbox) stay disclosed and read back, and no managed lane may depend on an individual subscription |
-| Supported alternative Turn host | LoopX Turn plus the `codex-cli` adapter | explicitly selectable; it is the `individual` executor kind, so it is billed to one person's CLI login | no managed lane may silently depend on an individual's personal CLI subscription; an individual lane must be selected, not reached by default |
+| Supported alternative Turn host | LoopX Turn plus the `codex-cli` adapter | explicitly selectable, and the credential-resolved default of the managed row above on a machine with no operator credential; it is the `individual` executor kind, so it is billed to one person's CLI login | no managed lane may *silently* depend on an individual's personal CLI subscription: the individual host is reached only as that credential-resolved default and is read back as `no_operator_credential`, never substituted for a host the operator selected |
 | L1 event source and session-owning runtime candidate | DSH | opt-in, not promoted; the bounded Turn host role is the default row above | the C0, C1, overhead, retention and Mode B rows in this document being run and reviewed |
 | Optional visible host loop | Pi | not a managed runtime | declare a per-binding session mode with readback, prove single-executor behavior under restart, "conversation is not a receipt", non-authoritative host-local state, and one real-host restart row |
 
@@ -88,6 +88,13 @@ A lane resolved onto the DSH host therefore never depends on an individual
 developer's CLI subscription being available, funded, or logged in, and a lane
 without an operator credential never silently borrows one either.
 
+This change also rewrites the promotion gate on the supported alternative host
+in the table above. It read "an individual lane must be selected, not reached by
+default", which the credential-resolved default contradicts. The rewritten rule
+keeps the original intent -- no lane may depend on one person's login without
+the operator being able to see that it did -- and names the readback that makes
+the dependency visible instead of forbidding the disclosed default.
+
 The steward channel is a **different** surface, and after the revision recorded
 below its default is stated as one conditional rule instead of one host name:
 the channel selects the managed host (`dsh`) when the operator credential is
@@ -110,7 +117,9 @@ effort `high`, overridable by `LOOPX_TURN_PROVIDER` / `LOOPX_TURN_MODEL` /
 when it is not the shipped one; it is one line because every plan payload carries
 it and the agent-facing output budget is a contract, and whichever values the
 line names are the values that run, so an owner-set model appears as itself.
-Credentials authenticate the selected profile; they never choose it.
+Credentials authenticate the selected profile and never choose it; the one
+thing a credential resolves is the shipped *host* default of a bounded Turn
+nobody selected, and that resolution carries its own readback source.
 
 Evidence for this binding, separated by source:
 
@@ -365,9 +374,9 @@ failure, journal and quota semantics LoopX already validates; keep B as the
 cheaper replacement if the upstream interface appears; evaluate C only if
 duplex streaming is required for the steward experience. Whichever option ships
 must demonstrate, for one steward session, that the model work lands on the
-operator credential and that no default path reaches an individual
-subscription. This document authorizes no new scheduler, retry authority or
-second monitoring subsystem to make that demonstration pass.
+operator credential and that no default path of the steward channel reaches an
+individual subscription. This document authorizes no new scheduler, retry
+authority or second monitoring subsystem to make that demonstration pass.
 
 Option A is the one that shipped, and its demonstration is a repository smoke
 rather than a live transcript: `examples/loopx-steward-managed-chat-smoke.py`
