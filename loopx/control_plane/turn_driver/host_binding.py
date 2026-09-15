@@ -28,7 +28,6 @@ from collections.abc import Mapping
 from typing import Any, Callable
 
 from ..operator_credential import (
-    OPERATOR_CREDENTIAL_ENV_VARS,
     OPERATOR_ENDPOINT_ENV_VAR,
     configured_operator_credential,
 )

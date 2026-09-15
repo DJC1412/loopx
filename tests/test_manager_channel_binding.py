@@ -18,10 +18,8 @@ from loopx.chat_manager import (
     manager_model_config,
     open_manager_session,
 )
-from loopx.chat_runtime import (
-    MANAGED_HOST_CHAT_TRANSPORT_UNSUPPORTED,
-    ChatRuntimeController,
-)
+from loopx.chat_agent import MANAGED_HOST_CHAT_TRANSPORT_UNSUPPORTED
+from loopx.chat_runtime import ChatRuntimeController
 from loopx.chat_store import ChatSessionStore
 
 

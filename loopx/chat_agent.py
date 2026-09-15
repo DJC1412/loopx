@@ -47,6 +47,35 @@ def _host_tool_gate(summary: str, next_action: str) -> dict[str, str]:
     }
 
 
+# The managed Turn host runs one bounded work segment per request and has no
+# interactive Chat transport, so a session request for it is a known outcome
+# rather than an unknown endpoint.
+MANAGED_TURN_HOST_IDS = frozenset({"dsh"})
+MANAGED_HOST_CHAT_TRANSPORT_UNSUPPORTED = "managed_host_chat_transport_unsupported"
+
+
+def agent_endpoint_error(agent_id: str) -> ValueError:
+    """Return the typed error for an Agent id this runtime cannot hold.
+
+    A managed Turn host keeps a typed host-tool gate and an actionable next
+    step, so the steward channel never half-connects to a host it cannot hold.
+    Every other unknown id keeps the existing untyped fallback.
+    """
+
+    if agent_id in MANAGED_TURN_HOST_IDS:
+        return CodexChatAgentError(
+            f"The managed host '{agent_id}' runs bounded LoopX Turns and cannot "
+            "hold an interactive Chat session yet.",
+            error_code=MANAGED_HOST_CHAT_TRANSPORT_UNSUPPORTED,
+            gate=_host_tool_gate(
+                f"'{agent_id}' has no LoopX Chat transport; it is a bounded Turn host.",
+                "Select a chat-capable Agent endpoint for this session, or run "
+                "the managed host through `loopx turn`.",
+            ),
+        )
+    return ValueError(f"unknown Agent endpoint: {agent_id}")
+
+
 def _approval_gate(summary: str) -> dict[str, str]:
     return {
         "kind": "approval_gate",

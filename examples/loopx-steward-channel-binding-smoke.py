@@ -22,11 +22,11 @@ from loopx.chat_manager import (  # noqa: E402
     manager_model_config,
     open_manager_session,
 )
-from loopx.chat_agent import CodexChatAgentError  # noqa: E402
-from loopx.chat_runtime import (  # noqa: E402
+from loopx.chat_agent import (  # noqa: E402
     MANAGED_HOST_CHAT_TRANSPORT_UNSUPPORTED,
-    ChatRuntimeController,
+    CodexChatAgentError,
 )
+from loopx.chat_runtime import ChatRuntimeController  # noqa: E402
 from loopx.chat_store import ChatSessionStore  # noqa: E402
 
 

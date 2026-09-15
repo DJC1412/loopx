@@ -1269,10 +1269,8 @@ class ChatRequestHandler(
                 "ok": True,
                 "schema_version": "loopx_chat_capabilities_v1",
                 "manager": manager_runtime_capability_projection(
-                    self.server.runtime_controller,
-                    manager_model_config(),
-                    channel_binding=manager_channel_binding(),
-                ),
+                    self.server.runtime_controller, manager_model_config(),
+                    channel_binding=manager_channel_binding()),
                 "runtime_identity": release_runtime_identity(),
                 "agent_backend": "multi_adapter",
                 "sandbox": "read-only",
