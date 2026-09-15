@@ -35,6 +35,7 @@ def test_managed_executor_reports_the_operator_credential_and_endpoint():
         "executor_kind": EXECUTOR_KIND_MANAGED,
         "credential_env": "DEEPSEEK_API_KEY",
         "endpoint_env": "DEEPSEEK_BASE_URL",
+        "operator_credential_bound": True,
         "available": True,
         "unavailable_reason": None,
     }
@@ -68,7 +69,34 @@ def test_managed_executor_reports_an_unconfigured_credential_without_inventing_o
 
     assert binding["credential_env"] is None
     assert binding["endpoint_env"] is None
+
+
+def test_unbound_managed_selection_states_the_credential_boundary():
+    """An explicit dsh host without a credential must not claim to be bound."""
+
+    binding = managed_executor_binding("dsh", environ={}, module_probe=_RUNTIME)
+
     assert binding["executor_kind"] == EXECUTOR_KIND_MANAGED
+    assert binding["operator_credential_bound"] is False
+    assert binding["available"] is True
+
+
+def test_configured_runner_hook_counts_as_an_operator_credential_boundary():
+    binding = managed_executor_binding(
+        "dsh",
+        environ={},
+        dsh_runner_configured=True,
+        module_probe=_NO_RUNTIME,
+    )
+
+    assert binding["operator_credential_bound"] is True
+
+
+def test_individual_and_generic_executors_are_not_operator_credential_bound():
+    for host in ("codex-cli", "generic-cli"):
+        binding = managed_executor_binding(host, environ={"DEEPSEEK_API_KEY": "sk-x"})
+
+        assert binding["operator_credential_bound"] is False, binding
 
 
 @pytest.mark.parametrize(
@@ -93,6 +121,7 @@ def test_other_hosts_make_no_launch_claim_and_carry_no_operator_env(
     assert binding["unavailable_reason"] is None
     assert binding["credential_env"] is None
     assert binding["endpoint_env"] is None
+    assert binding["operator_credential_bound"] is False
 
 
 @pytest.mark.parametrize(

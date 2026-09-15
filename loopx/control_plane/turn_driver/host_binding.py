@@ -95,6 +95,7 @@ def managed_executor_binding(
     """
 
     if host == MANAGED_HOST:
+        credential_env = configured_operator_credential(environ)
         launchable = bool(
             dsh_runner_configured or dsh_runtime_importable(module_probe)
         )
@@ -102,8 +103,14 @@ def managed_executor_binding(
             "schema_version": MANAGED_EXECUTOR_BINDING_SCHEMA_VERSION,
             "executor": host,
             "executor_kind": EXECUTOR_KIND_MANAGED,
-            "credential_env": configured_operator_credential(environ),
+            "credential_env": credential_env,
             "endpoint_env": _configured_env_name(OPERATOR_ENDPOINT_ENV_VAR, environ),
+            # A managed executor is only operator-credential-bound when the
+            # operator credential or an explicit runner hook is configured.
+            # An explicitly selected dsh host without either is unbound: it may
+            # still launch from whatever the dsh home configures, so the
+            # readback states the boundary instead of claiming one.
+            "operator_credential_bound": bool(credential_env or dsh_runner_configured),
             "available": launchable,
             "unavailable_reason": None if launchable else DSH_RUNTIME_UNAVAILABLE,
         }
@@ -117,6 +124,7 @@ def managed_executor_binding(
         ),
         "credential_env": None,
         "endpoint_env": None,
+        "operator_credential_bound": False,
         "available": None,
         "unavailable_reason": None,
     }
