@@ -7,8 +7,7 @@ import pytest
 from loopx.cli import build_parser
 from loopx.control_plane.operator_credential import configured_operator_credential
 from loopx.control_plane.turn_driver.host_binding import (
-    INDIVIDUAL_DEFAULT_TURN_HOST,
-    MANAGED_DEFAULT_TURN_HOST,
+    INDIVIDUAL_TURN_HOST,
     MANAGED_TURN_HOST,
     TURN_HOST_ENV_VAR,
     TURN_HOST_SOURCE_EXPLICIT_CONFIG,
@@ -20,12 +19,12 @@ from loopx.control_plane.turn_driver.host_binding import (
 
 
 def test_managed_credential_selects_the_managed_default_host():
-    assert MANAGED_DEFAULT_TURN_HOST == MANAGED_TURN_HOST == "dsh"
+    assert MANAGED_TURN_HOST == "dsh"
     environ = {"DEEPSEEK_API_KEY": "sk-operator"}
 
-    assert resolve_default_turn_host(environ) == MANAGED_DEFAULT_TURN_HOST
+    assert resolve_default_turn_host(environ) == MANAGED_TURN_HOST
     assert selected_turn_host(environ) == (
-        MANAGED_DEFAULT_TURN_HOST,
+        MANAGED_TURN_HOST,
         TURN_HOST_SOURCE_OPERATOR_CREDENTIAL,
     )
 
@@ -42,10 +41,10 @@ def test_managed_credential_selects_the_managed_default_host():
 def test_no_usable_credential_defaults_to_the_individual_host(environ):
     """Without an operator credential the default is the host that can run."""
 
-    assert INDIVIDUAL_DEFAULT_TURN_HOST == "codex-cli"
-    assert resolve_default_turn_host(environ) == INDIVIDUAL_DEFAULT_TURN_HOST
+    assert INDIVIDUAL_TURN_HOST == "codex-cli"
+    assert resolve_default_turn_host(environ) == INDIVIDUAL_TURN_HOST
     assert selected_turn_host(environ) == (
-        INDIVIDUAL_DEFAULT_TURN_HOST,
+        INDIVIDUAL_TURN_HOST,
         TURN_HOST_SOURCE_NO_OPERATOR_CREDENTIAL,
     )
 
@@ -141,9 +140,9 @@ def test_default_execution_mode_follows_the_selected_host(command, monkeypatch):
     # The managed host runs bounded headless Turns; pairing it with a visible
     # interactive mode would make that default unschedulable.
     # run-once ships only the isolated-headless mode, so it keeps that either way.
-    assert managed.host == MANAGED_DEFAULT_TURN_HOST
+    assert managed.host == MANAGED_TURN_HOST
     assert managed.execution_mode == "isolated-headless"
-    assert individual_default.host == INDIVIDUAL_DEFAULT_TURN_HOST
+    assert individual_default.host == INDIVIDUAL_TURN_HOST
     assert individual_default.execution_mode == (
         "interactive-visible" if command == "plan" else "isolated-headless"
     )

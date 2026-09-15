@@ -52,8 +52,6 @@ from .execution_profile import (
 # *which* host runs.
 MANAGED_TURN_HOST = "dsh"
 INDIVIDUAL_TURN_HOST = "codex-cli"
-MANAGED_DEFAULT_TURN_HOST = MANAGED_TURN_HOST
-INDIVIDUAL_DEFAULT_TURN_HOST = INDIVIDUAL_TURN_HOST
 TURN_HOST_ENV_VAR = "LOOPX_TURN_HOST"
 TURN_HOST_SOURCE_EXPLICIT_CONFIG = "explicit_config"
 TURN_HOST_SOURCE_OPERATOR_CREDENTIAL = "operator_credential"
@@ -105,9 +103,9 @@ def selected_turn_host(
     if explicit:
         return explicit, TURN_HOST_SOURCE_EXPLICIT_CONFIG
     if configured_operator_credential(environ):
-        return MANAGED_DEFAULT_TURN_HOST, TURN_HOST_SOURCE_OPERATOR_CREDENTIAL
+        return MANAGED_TURN_HOST, TURN_HOST_SOURCE_OPERATOR_CREDENTIAL
     return (
-        INDIVIDUAL_DEFAULT_TURN_HOST,
+        INDIVIDUAL_TURN_HOST,
         TURN_HOST_SOURCE_NO_OPERATOR_CREDENTIAL,
     )
 

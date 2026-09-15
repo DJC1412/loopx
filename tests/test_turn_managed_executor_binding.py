@@ -9,7 +9,7 @@ from loopx.control_plane.turn_driver.host_binding import (
     EXECUTOR_KIND_GENERIC,
     EXECUTOR_KIND_INDIVIDUAL,
     EXECUTOR_KIND_MANAGED,
-    INDIVIDUAL_DEFAULT_TURN_HOST,
+    INDIVIDUAL_TURN_HOST,
     MANAGED_EXECUTOR_BINDING_SCHEMA_VERSION,
     MANAGED_TURN_HOST,
     OPERATOR_CREDENTIAL_UNCONFIGURED,
@@ -221,13 +221,13 @@ def test_other_hosts_make_no_launch_claim_and_carry_no_operator_env(
 @pytest.mark.parametrize(
     "environ, expected_host, expected_kind",
     [
-        ({}, INDIVIDUAL_DEFAULT_TURN_HOST, EXECUTOR_KIND_INDIVIDUAL),
+        ({}, INDIVIDUAL_TURN_HOST, EXECUTOR_KIND_INDIVIDUAL),
         (
             {"DEEPSEEK_API_KEY": "sk-operator"},
             MANAGED_TURN_HOST,
             EXECUTOR_KIND_MANAGED,
         ),
-        ({"DEEPSEEK_API_KEY": "   "}, INDIVIDUAL_DEFAULT_TURN_HOST, EXECUTOR_KIND_INDIVIDUAL),
+        ({"DEEPSEEK_API_KEY": "   "}, INDIVIDUAL_TURN_HOST, EXECUTOR_KIND_INDIVIDUAL),
     ],
 )
 def test_default_resolution_reads_back_the_executor_it_selected(
@@ -254,7 +254,7 @@ def test_endpoint_without_credential_does_not_select_the_managed_default():
     environ = {"DEEPSEEK_BASE_URL": "https://example.invalid"}
     binding = managed_executor_binding("codex-cli", environ=environ)
 
-    assert resolve_default_turn_host(environ) == INDIVIDUAL_DEFAULT_TURN_HOST
+    assert resolve_default_turn_host(environ) == INDIVIDUAL_TURN_HOST
     assert binding["endpoint_env"] is None
 
 
