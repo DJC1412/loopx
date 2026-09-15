@@ -50,7 +50,7 @@ C1、开销、保留与 Mode B 各行。
 
 | 角色 | 来源 | 当前选型 | 晋级门槛 |
 | --- | --- | --- | --- |
-| 默认托管执行宿主 | LoopX Turn 加 `dsh` 宿主适配器，并绑定到运维方提供的模型端点 | 出货默认值：托管有界 Turn 走 `dsh`，与环境无关；`LOOPX_TURN_HOST` 可改指，显式 `--host` 优先；在托管栈中（PR #4443），尚未进入 `main` | 保持类型化 host request/result、独立验证与凭据归属运维方的边界；没有同等或更强的契约不替换 |
+| 默认托管执行宿主 | LoopX Turn 加 `dsh` 宿主适配器，并绑定到运维方提供的模型端点 | 出货默认值：配置了运维方凭据时托管有界 Turn 走 `dsh`，没有凭据时走个体 `codex-cli`；显式 `LOOPX_TURN_HOST` 可改指，显式 `--host` 优先 | 保持类型化 host request/result、独立验证与凭据归属运维方的边界；没有同等或更强的契约不替换 |
 | 管家通道执行器 | 管家回答所依赖的交互式 Chat 传输 | 出货默认值，按凭据分派：配置了 operator 凭据时为托管宿主（`dsh`），未配置时为 `codex`；`LOOPX_MANAGER_ENDPOINT` 可改指，显式端点优先；选型由 PR #4446 落地，条件默认值与单段传输随本次变更落地 | 单段传输的类型化边界（无流式、无跨 turn 宿主会话、沙箱只读）必须持续披露并可回读；任何托管通道都不得依赖个人订阅 |
 | 受支持的替代 Turn 宿主 | LoopX Turn 加 `codex-cli` 适配器 | 可显式选择；它属于 `individual` 执行器类型，账落在某个人的 CLI 登录上 | 任何托管通道都不得静默依赖某个人的 CLI 订阅；个人通道必须被显式选择，而不是默认走到 |
 | L1 事件源与会话归属 runtime 候选 | DSH | opt-in，未晋级；有界 Turn 宿主角色见上一行默认值 | 本文 C0、C1、开销、保留与 Mode B 各行被真实执行并通过评审 |
@@ -63,12 +63,14 @@ DSH 绑定是 DSH Turn 宿主 + provider `deepseek-official` + 模型 `deepseek-
 （DeepSeek V4.1 Flash）+ 推理档位 `high`，端点取自运维方环境（`DEEPSEEK_BASE_URL`），
 凭据取自运维方环境（`DEEPSEEK_API_KEY`）。
 
-LoopX **选择**托管有界 Turn 的默认宿主，而从不由环境推断
-（`loopx/control_plane/turn_driver/host_binding.py`）：出货默认值是 `dsh`，
-`LOOPX_TURN_HOST` 可改指，显式 `--host` 优先于两者。operator 凭据不是选型输入。
-这个区分正是该绑定的意义：发现一把 key 不等于决定换运行位置；一个按环境解析宿主的
-面，会让"选定的配置"和"偶然生效的配置"无法区分。因此被选到 DSH 宿主的通道不会依赖
-某个开发者本机 CLI 订阅是否可用、是否还有额度或是否已登录。
+LoopX **选择**托管有界 Turn 的默认宿主，而从不由启动时的意外推断
+（`loopx/control_plane/turn_driver/host_binding.py`）：显式 `--host` 或
+`LOOPX_TURN_HOST` 始终优先；两者都没配置时，出货默认值由运维方自己的凭据事实解析
+——配置了凭据就是托管 `dsh` 宿主，没有凭据则是个体 `codex-cli` 宿主，因为无法认证的
+托管宿主只会拒绝运行。真正需要区分的是**默认值**与**决定**：凭据可以解析一个本来
+无从选择的默认值，但它永远不会改指运维方已经显式选定的宿主。因此解析到 DSH 宿主的
+通道不会依赖某个开发者本机 CLI 订阅是否可用、是否还有额度或是否已登录；没有运维方
+凭据的通道也不会悄悄借用别人的订阅。
 
 管家通道是**另一个**面；经下文记录的修订后，它的默认值用一条条件规则表达，而不是
 一个宿主名：配置了 operator 凭据时通道选择托管宿主（`dsh`），未配置时为 `codex`。
@@ -90,9 +92,12 @@ LoopX **选择**托管有界 Turn 的默认宿主，而从不由环境推断
 
 该绑定的证据按来源区分：
 
-- 仓库覆盖、无需任何 provider 调用：出货默认值是 `dsh`，显式 `LOOPX_TURN_HOST`
-  可改指，显式 `--host` 仍然优先，且配置凭据不改变以上任何一项选择
-  （PR #4443 的测试，已进入 `main`）；
+- 仓库覆盖、无需任何 provider 调用：配置了运维方凭据时出货默认值是 `dsh`，没有时
+  是 `codex-cli`；显式 `LOOPX_TURN_HOST` 可改指任一默认值，显式 `--host` 优先于
+  全部（`tests/test_turn_default_host_binding.py`、
+  `tests/test_turn_managed_executor_binding.py`、
+  `examples/loopx-turn-managed-executor-binding-smoke.py`、
+  `examples/loopx-turn-managed-default-flow-smoke.py`）；
 - 本地真实验证：在真实 SDK 与 runtime（`deepseek-harness-sdk==0.1.5rc1`，即 PR
   #4420 提出的固定版本；`main` 今天仍固定在 `0.1.2a3`，同一对路径在那里也通过）下，
   进程内 `--host dsh` 路径与 `generic-cli` 子进程路径均通过；

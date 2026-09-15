@@ -99,15 +99,21 @@ See [DeepSeek Harness connector](../../integrations/deepseek-harness-connector.m
 
 ### Host Selection
 
-The Turn host is **selected, never inferred**. `loopx turn plan` and
-`loopx turn run-once` default to the managed `dsh` host, the operator may
-re-point that default with `LOOPX_TURN_HOST` or one explicit `--host`, and a
-configured operator credential only *authenticates* the host that was already
-selected. Discovering `DEEPSEEK_API_KEY` must never re-point a Turn by itself.
+The Turn host is **selected, never inferred from an incidental environment**. An
+explicit `--host` or `LOOPX_TURN_HOST` always wins; only when the operator
+configured neither is the shipped default resolved from the operator's own
+credential facts:
+
+- operator credential configured: the default host is the managed `dsh`
+  executor, which that credential authenticates;
+- no operator credential configured: the default host is the individual
+  `codex-cli` executor, because a managed host nothing can authenticate would
+  otherwise refuse to run at all.
 
 | surface | value |
 | --- | --- |
-| shipped default host | `dsh` (managed executor) |
+| shipped default host, credential configured | `dsh` (managed executor) |
+| shipped default host, no credential | `codex-cli` (individual executor) |
 | explicit default selector | `LOOPX_TURN_HOST` |
 | per-command override | `--host codex-cli\|claude-code\|dsh\|generic-cli` (plan), `codex-cli\|dsh\|generic-cli` (run-once) |
 | authenticating credential | `DEEPSEEK_API_KEY`, optional endpoint `DEEPSEEK_BASE_URL` |
@@ -141,11 +147,14 @@ effort is named in the same line. Credentials authenticate the selected profile;
 discovering `DEEPSEEK_API_KEY` never changes provider, model, or effort on its
 own.
 
-This is a default behavior change for the affected lanes: `run-once` moved from
-`generic-cli` to `dsh`, and `plan` from `codex-cli` to `dsh`. `--host
-generic-cli` and `--host codex-cli` remain the explicit compatibility and
-rollback paths, and a machine that wants the former default should set
-`LOOPX_TURN_HOST=generic-cli` (or `codex-cli`) once instead of relying on the
+This is a default behavior change for the affected lanes. Both `plan` and
+`run-once` previously defaulted to `dsh` regardless of the credential, so a lane
+without one failed closed on `operator_credential_unconfigured`; the default is
+now credential-resolved and a lane without a credential keeps running on the
+individual CLI host. `--host dsh` remains the explicit managed path and still
+fails closed with the same typed reason when nothing can authenticate it,
+`--host generic-cli` remains the compatibility path, and a machine that wants
+one fixed host should set `LOOPX_TURN_HOST` once instead of relying on the
 ambient environment.
 
 `plan` and `run-once` payloads carry the executor readback `managed_executor`
@@ -158,7 +167,7 @@ whether it can launch here. When it cannot, `available` is `false`,
 | `unavailable_reason` | meaning | remediation |
 | --- | --- | --- |
 | `dsh_runtime_unavailable` | the DeepSeek Harness runtime is not importable and no explicit runner hook was supplied | install the released runtime, pass its runner hook, or select `--host codex-cli` |
-| `operator_credential_unconfigured` | the managed host is selected but no operator credential or runner hook would authenticate it | set `DEEPSEEK_API_KEY`, or select `--host codex-cli` explicitly |
+| `operator_credential_unconfigured` | the managed host is selected but no operator credential or runner hook would authenticate it | set `DEEPSEEK_API_KEY`, or select `--host codex-cli` explicitly; the shipped default already resolves to `codex-cli` until a credential exists |
 | `invalid_reasoning_effort` | the resolved execution profile names a reasoning effort the host adapter does not support | pass a supported `--dsh-reasoning-effort`, or clear the overriding environment variable |
 
 The same readback also carries `unavailable_remediation`, which names those

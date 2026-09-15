@@ -141,11 +141,13 @@ classification precedence, plus the hermetic verification smoke
 
 ## Host Selection And Managed Executor Readback
 
-The Turn host is **selected, never inferred**. `dsh` is the shipped default
-because it is the managed execution unit the steward drives; `LOOPX_TURN_HOST`
-re-points that default, and an explicit `--host` (or `--host-adapter-command-json`)
-wins over both. A configured `DEEPSEEK_API_KEY` only *authenticates* the selected
-host: discovering a credential never changes where a Turn runs.
+The Turn host is **selected, never inferred from an incidental environment**. An
+explicit `--host` (or `--host-adapter-command-json`) or `LOOPX_TURN_HOST` always
+wins. With neither configured, the shipped default is resolved from the
+operator's own credential facts: `dsh` is the default when `DEEPSEEK_API_KEY` is
+configured, because it is the managed execution unit the steward drives and that
+credential authenticates it, and `codex-cli` is the default when no credential is
+configured, because an unauthenticated managed host would refuse to run.
 
 What runs on that host is a separate resolution. The managed execution profile
 defaults to `deepseek-official` / `deepseek-v4-flash` / `high`, overridden by

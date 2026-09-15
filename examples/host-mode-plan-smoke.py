@@ -140,11 +140,11 @@ def test_headless_preview_ignores_operator_credential() -> None:
             os.environ.pop(credential_env, None)
         else:
             os.environ[credential_env] = previous
-    # `loopx turn plan`/`run-once` ship one explicit product default that
-    # `LOOPX_TURN_HOST` or an explicit `--host` re-points, and an operator
-    # credential only authenticates the host that was already selected. A
-    # preview whose shape changed when the credential appeared would re-introduce
-    # a credential-selected Turn host, so the shape is pinned here instead.
+    # `loopx turn plan`/`run-once` resolve one shipped default that
+    # `LOOPX_TURN_HOST` or an explicit `--host` re-points. The preview never
+    # performs that resolution, so its shape must not depend on the credential
+    # that would resolve it at run time: a preview that changed shape once a
+    # credential appeared would freeze one machine's resolution into a plan.
     assert with_credential == without_credential, (without_credential, with_credential)
     assert without_credential["host_selection"] == "resolved_default", without_credential
     assert "--host" not in without_credential["plan_command"], without_credential

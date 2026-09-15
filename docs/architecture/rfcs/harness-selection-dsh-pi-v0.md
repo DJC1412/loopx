@@ -60,7 +60,7 @@ dated 2026-09-15 and is written to land with the managed stack:
 
 | Role | Source | Selection today | Promotion gate |
 | --- | --- | --- | --- |
-| Default managed execution host | LoopX Turn plus the `dsh` host adapter, bound to an operator-supplied model endpoint | shipped product default: `dsh` for bounded managed Turns, environment-independent; `LOOPX_TURN_HOST` re-points it and an explicit `--host` wins (PR #4443) | keep the typed host request/result, independent validation, and the operator-owned credential boundary; do not replace it without an equal or stronger contract |
+| Default managed execution host | LoopX Turn plus the `dsh` host adapter, bound to an operator-supplied model endpoint | shipped product default, credential-resolved: the managed `dsh` host when the operator credential is configured, the individual `codex-cli` host when it is not; `LOOPX_TURN_HOST` re-points whichever resolved and an explicit `--host` wins (PR #4443, default resolution with this change) | keep the typed host request/result, independent validation, and the operator-owned credential boundary; do not replace it without an equal or stronger contract |
 | Steward channel executor | the interactive Chat transport the steward answers on | shipped product default, credential-conditional: the managed host (`dsh`) when the operator credential is configured, `codex` when it is not; `LOOPX_MANAGER_ENDPOINT` re-points it and an explicit endpoint wins; selection landed in PR #4446, the conditional default and the segment transport land with this change | the segment transport's typed limits (no streaming, no cross-turn host session, read-only sandbox) stay disclosed and read back, and no managed lane may depend on an individual subscription |
 | Supported alternative Turn host | LoopX Turn plus the `codex-cli` adapter | explicitly selectable; it is the `individual` executor kind, so it is billed to one person's CLI login | no managed lane may silently depend on an individual's personal CLI subscription; an individual lane must be selected, not reached by default |
 | L1 event source and session-owning runtime candidate | DSH | opt-in, not promoted; the bounded Turn host role is the default row above | the C0, C1, overhead, retention and Mode B rows in this document being run and reviewed |
@@ -76,14 +76,17 @@ Flash) at reasoning effort `high`, an endpoint from the operator environment
 (`DEEPSEEK_API_KEY`).
 
 LoopX **selects** the default host for bounded managed Turns and never infers it
-(`loopx/control_plane/turn_driver/host_binding.py`): the shipped default is `dsh`,
-`LOOPX_TURN_HOST` re-points it, and an explicit `--host` wins over both. The
-operator credential is not a selection input. This distinction is the whole
-point of the binding: discovering a key is not a decision to change where work
-runs, and a surface that resolves its host from the environment makes a chosen
-configuration indistinguishable from an incidental one. A lane selected onto the
-DSH host therefore never depends on an individual developer's CLI subscription
-being available, funded, or logged in.
+from a launch-time surprise (`loopx/control_plane/turn_driver/host_binding.py`):
+an explicit `--host` or `LOOPX_TURN_HOST` always wins, and only when neither is
+configured is the shipped default resolved from the operator's own credential
+facts -- the managed `dsh` host when a credential exists, and the individual
+`codex-cli` host when one does not, because an unauthenticated managed host
+would refuse to run. The distinction that matters is between a *default* and a
+*decision*: a credential may resolve a default that would otherwise have to pick
+a host at random, but it never re-points a host the operator already selected.
+A lane resolved onto the DSH host therefore never depends on an individual
+developer's CLI subscription being available, funded, or logged in, and a lane
+without an operator credential never silently borrows one either.
 
 The steward channel is a **different** surface, and after the revision recorded
 below its default is stated as one conditional rule instead of one host name:
@@ -111,10 +114,13 @@ Credentials authenticate the selected profile; they never choose it.
 
 Evidence for this binding, separated by source:
 
-- repository-covered without any provider call: the shipped default is `dsh`, an
-  explicit `LOOPX_TURN_HOST` re-points it, an explicit `--host` still wins, and a
-  configured credential changes none of those selections (tests in PR #4443, not
-  yet on `main`);
+- repository-covered without any provider call: with an operator credential the
+  shipped default is `dsh` and without one it is `codex-cli`, an explicit
+  `LOOPX_TURN_HOST` re-points either default, and an explicit `--host` still
+  wins over all of them (`tests/test_turn_default_host_binding.py`,
+  `tests/test_turn_managed_executor_binding.py`,
+  `examples/loopx-turn-managed-executor-binding-smoke.py`,
+  `examples/loopx-turn-managed-default-flow-smoke.py`);
 - local live qualification with the real SDK and runtime
   (`deepseek-harness-sdk==0.1.5rc1`, the pin PR #4420 proposes; `main` still
   pins `0.1.2a3` and the same pair also passed there): the in-process

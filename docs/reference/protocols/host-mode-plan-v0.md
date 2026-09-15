@@ -149,8 +149,11 @@ quota guard command, and required proofs.
   that this concrete host has already been resolved for the run; the runtime
   resolves the concrete host from its own explicit product default
   (`loopx/control_plane/turn_driver/host_binding.py`) when `plan_command` runs,
-  and `LOOPX_TURN_HOST` or an explicit `--host` re-points that default. An
-  operator credential authenticates the selected host; it does not select one.
+  and `LOOPX_TURN_HOST` or an explicit `--host` re-points that default. That
+  default is resolved from the operator credential, so this preview stays
+  deliberately credential-invariant: it pins no host and reports the resolution
+  as undone, instead of freezing one machine's credential facts into a plan that
+  other lanes read.
 - `host_selection` is `resolved_default` when the command deliberately leaves
   host resolution to `loopx turn plan`/`run-once`, and `pinned` when the command
   carries an explicit `--host`.
