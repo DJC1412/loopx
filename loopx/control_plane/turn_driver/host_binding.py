@@ -133,3 +133,41 @@ def managed_executor_binding(
         "available": None,
         "unavailable_reason": None,
     }
+
+
+def managed_executor_payload_entry(plan: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the execution payload's ``managed_executor`` entry, when planned.
+
+    Reading the entry from the plan keeps one authority for the executor
+    identity: the payload quotes the binding the plan resolved instead of
+    re-deriving an executor from the launched host.
+    """
+
+    binding = plan.get("managed_executor")
+    return {"managed_executor": dict(binding)} if isinstance(binding, Mapping) else {}
+
+
+def managed_executor_unavailable_payload(
+    plan: Mapping[str, Any],
+    *,
+    execute: bool,
+    host_projection: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Return the fail-closed execution payload for an unlaunchable executor.
+
+    ``None`` means the plan makes no claim that its executor cannot launch, so
+    the Turn continues normally. A returned payload stops the Turn before the
+    journal, the host, and quota with no effect recorded, so a bounded Turn
+    cannot quietly move onto a different executor than the plan read back.
+    """
+
+    if not execute:
+        return None
+    binding = plan.get("managed_executor")
+    if not isinstance(binding, Mapping) or binding.get("available") is not False:
+        return None
+    return {
+        "status": "unavailable",
+        "host": dict(host_projection),
+        "reason": str(binding.get("unavailable_reason") or ""),
+    }

@@ -28,6 +28,10 @@ from .command_validation import (
     reward_memory_reflection_digest,
 )
 from .driver import selected_turn_todo
+from .host_binding import (
+    managed_executor_payload_entry,
+    managed_executor_unavailable_payload,
+)
 from .host_failure import BuiltInHostError, project_host_failure, record_host_failure
 from .journal_store import (
     LOOPX_TURN_JOURNAL_SCHEMA_VERSION,
@@ -778,11 +782,7 @@ def _execution_payload(
         "status": journal.get("status"),
         "execution_mode": planned_host.get("execution_mode"),
         "host": journal.get("host"),
-        **(
-            {"managed_executor": dict(plan["managed_executor"])}
-            if isinstance(plan.get("managed_executor"), Mapping)
-            else {}
-        ),
+        **managed_executor_payload_entry(plan),
         "result_kind": journal.get("result_kind"),
         "validation": journal.get("task_validation"),
         "receipt": journal.get("receipt"),
@@ -1311,25 +1311,14 @@ def run_loopx_turn_once(
         "quota_spent": False,
         "scheduler_acknowledged": False,
     }
-    managed_executor = (
-        plan.get("managed_executor")
-        if isinstance(plan.get("managed_executor"), Mapping)
-        else {}
+    fail_closed = managed_executor_unavailable_payload(
+        plan, execute=execute, host_projection=host_projection
     )
-    if execute and managed_executor.get("available") is False:
-        # Fail closed on an executor LoopX can prove cannot launch here: report
-        # the planned executor and stop before the journal, the host, and quota
-        # so the Turn cannot quietly move onto a different executor instead.
+    if fail_closed is not None:
+        # Fail closed on an executor LoopX can prove cannot launch: report the
+        # planned executor and stop before the journal, host, and quota.
         return _execution_payload(
-            plan,
-            {
-                "status": "unavailable",
-                "host": host_projection,
-                "reason": str(managed_executor.get("unavailable_reason") or ""),
-            },
-            execute=True,
-            replayed=False,
-            effects=empty_effects,
+            plan, fail_closed, execute=True, replayed=False, effects=empty_effects
         )
     if not execute:
         preview = {
