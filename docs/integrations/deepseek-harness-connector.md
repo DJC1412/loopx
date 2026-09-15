@@ -88,6 +88,40 @@ the resolved value is what `loopx turn plan` reports back. `loopx turn run-once`
 accepts the `codex-cli`, `dsh`, and `generic-cli` hosts it ships adapters for;
 `loopx turn plan` additionally accepts the planning-only `claude-code` host.
 
+## Managed Executor Readback
+
+Both `loopx turn plan` and `loopx turn run-once` report a
+`managed_executor` block, so a caller reads the planned executor instead of
+inferring it from a host id:
+
+```json
+{
+  "schema_version": "managed_executor_binding_v0",
+  "executor": "dsh",
+  "executor_kind": "managed",
+  "credential_env": "DEEPSEEK_API_KEY",
+  "endpoint_env": "DEEPSEEK_BASE_URL",
+  "available": true,
+  "unavailable_reason": null
+}
+```
+
+`executor_kind` names where the Turn's model work is billed and bounded:
+`managed` for a host bound to an operator credential, `individual` for a host
+that runs on one person's own CLI login, and `generic` for a caller-supplied
+adapter command. `available` is `false` only when LoopX can prove the planned
+host cannot launch here; it is `null` for executors this projection does not
+probe rather than an unproven claim.
+
+A `run-once --execute` whose planned host reports `available: false` fails
+closed: it reports the status `unavailable` with the typed
+`unavailable_reason`, invokes no host, writes no journal, and spends no quota
+slot. The Turn never moves onto a different executor on its own; an operator who
+wants another host names it explicitly. `--dsh-runner` records that the caller
+supplied its own runner, so a hermetic test hook counts as a launchable managed
+host. Without that flag the built-in host needs the DeepSeek Harness runtime
+from the `loopx[deepseek-harness]` extra.
+
 ## Onboard
 
 ```bash
