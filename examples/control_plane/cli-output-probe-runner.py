@@ -108,6 +108,9 @@ def _receipt_row(
         "reward_memory_outcome_prompt_revision": (
             semantics.reward_memory_outcome_prompt_revision(text)
         ),
+        "managed_executor_binding_revision": (
+            semantics.managed_executor_binding_revision(text)
+        ),
         "guided_todo_delta_schema_versions": (
             semantics.guided_todo_delta_schema_versions(payload)
             if isinstance(payload, dict)

@@ -41,6 +41,28 @@ def reward_memory_outcome_prompt_revision(text: str) -> str | None:
         else None
     )
 
+
+def managed_executor_binding_revision(text: str) -> str | None:
+    """Attribute the managed-executor binding readback on a Turn surface.
+
+    This is qualification evidence for the exact projection, never a runtime
+    classifier: the binding key alone would match prose, so the revision also
+    requires the executor identity, its launchability claim, and the typed
+    reason slot that only this readback renders.
+    """
+
+    required = (
+        '"managed_executor"',
+        '"executor_kind"',
+        '"available"',
+        '"unavailable_reason"',
+    )
+    return (
+        "managed_executor_binding_v0"
+        if all(fragment in text for fragment in required)
+        else None
+    )
+
 _MARKDOWN_HEADING = re.compile(r"^#{1,6}\s+.+$")
 _RUNTIME_ROOT_COMMAND_ROUTE = re.compile(
     r"(?m)(?:^|[\"'`])[^\r\n\S]*loopx\s+--runtime-root\s+"

@@ -177,6 +177,45 @@ _REWARD_MEMORY_OUTCOME_PROMPT_V1_MIGRATION_ALLOWANCE: dict[Metric, int] = {
     "compact_payload_chars": 640,
 }
 
+# The Turn plan readback adds one bounded managed-executor binding so a caller
+# sees which executor a planned Turn would use and whether it can launch here,
+# instead of inferring it from the host id.  The allowance is bound to the
+# declared none-to-v0 binding transition and to the Turn surfaces that quote
+# it; quota, status, and every other agent-facing surface keep the ordinary
+# budget, and once v0 is the baseline a v0-to-v0 change receives no allowance.
+_MANAGED_EXECUTOR_BINDING_V0_MIGRATION_GROWTH_ALLOWANCE: dict[Metric, int] = {
+    "chars": 512,
+    "utf8_bytes": 512,
+    "lines": 12,
+    "compact_payload_chars": 448,
+}
+
+_MANAGED_EXECUTOR_BINDING_SURFACES = frozenset(
+    {
+        "loopx_turn_plan",
+        "loopx_turn_plan_transaction_detail",
+        "loopx_turn_run_once_preview",
+    }
+)
+
+
+def _managed_executor_binding_allowance(
+    row_id: str,
+    base: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+    metric: Metric,
+) -> int:
+    surface = row_id.partition("/")[2].partition("/")[0]
+    if (
+        row_id.startswith(("surface/", "variant/"))
+        and surface in _MANAGED_EXECUTOR_BINDING_SURFACES
+        and base.get("managed_executor_binding_revision") is None
+        and candidate.get("managed_executor_binding_revision")
+        == "managed_executor_binding_v0"
+    ):
+        return _MANAGED_EXECUTOR_BINDING_V0_MIGRATION_GROWTH_ALLOWANCE[metric]
+    return 0
+
 
 def _reward_memory_outcome_prompt_allowance(
     row_id: str,
@@ -540,6 +579,12 @@ def _compare_row(base: dict[str, Any], candidate: dict[str, Any]) -> dict[str, A
                 base=base_value,
             ),
             _reward_memory_outcome_prompt_allowance(
+                row_id,
+                base,
+                candidate,
+                metric,
+            ),
+            _managed_executor_binding_allowance(
                 row_id,
                 base,
                 candidate,

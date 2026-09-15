@@ -146,6 +146,51 @@ def test_reward_memory_outcome_prompt_budget_is_one_time_bounded_and_prompt_only
     ]
 
 
+def test_managed_executor_binding_budget_is_one_time_bounded_and_turn_only() -> None:
+    from loopx.control_plane.testing.cli_output_differential import _compare_row
+    from loopx.control_plane.testing.cli_output_semantics import (
+        managed_executor_binding_revision,
+    )
+
+    projection = (
+        '{\n  "managed_executor": {\n'
+        '    "executor_kind": "managed",\n'
+        '    "available": true,\n'
+        '    "unavailable_reason": null\n  }\n}'
+    )
+    assert (
+        managed_executor_binding_revision(projection)
+        == "managed_executor_binding_v0"
+    )
+    assert (
+        managed_executor_binding_revision(
+            projection.replace('"unavailable_reason"', '"reason"')
+        )
+        is None
+    )
+
+    base = _row(row_id="variant/loopx_turn_run_once_preview/small/json")
+    current = {
+        **base,
+        "chars": base["chars"] + 254,
+        "utf8_bytes": base["utf8_bytes"] + 254,
+        "lines": base["lines"] + 9,
+        "compact_payload_chars": base["compact_payload_chars"] + 205,
+        "managed_executor_binding_revision": "managed_executor_binding_v0",
+    }
+    assert not _compare_row(base, current)["failures"]
+    assert _compare_row(base, {**current, "chars": base["chars"] + 513})[
+        "failures"
+    ]
+    assert _compare_row(current, {**current, "chars": current["chars"] + 254})[
+        "failures"
+    ]
+    other = {**base, "row_id": "surface/status/small/json"}
+    assert _compare_row(other, {**current, "row_id": other["row_id"]})[
+        "failures"
+    ]
+
+
 def test_regular_integration_pr_keeps_requested_cli_output_base() -> None:
     ancestors = {
         ("origin/main", "HEAD"),
