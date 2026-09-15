@@ -9,6 +9,7 @@ from loopx.control_plane.turn_driver.host_binding import (
     EXECUTOR_KIND_GENERIC,
     EXECUTOR_KIND_INDIVIDUAL,
     EXECUTOR_KIND_MANAGED,
+    INDIVIDUAL_DEFAULT_TURN_HOST,
     MANAGED_EXECUTOR_BINDING_SCHEMA_VERSION,
     MANAGED_TURN_HOST,
     OPERATOR_CREDENTIAL_UNCONFIGURED,
@@ -218,15 +219,20 @@ def test_other_hosts_make_no_launch_claim_and_carry_no_operator_env(
 
 
 @pytest.mark.parametrize(
-    "environ",
+    "environ, expected_host, expected_kind",
     [
-        {},
-        {"DEEPSEEK_API_KEY": "sk-operator"},
-        {"DEEPSEEK_API_KEY": ""},
-        {"DEEPSEEK_API_KEY": "   "},
+        ({}, INDIVIDUAL_DEFAULT_TURN_HOST, EXECUTOR_KIND_INDIVIDUAL),
+        (
+            {"DEEPSEEK_API_KEY": "sk-operator"},
+            MANAGED_TURN_HOST,
+            EXECUTOR_KIND_MANAGED,
+        ),
+        ({"DEEPSEEK_API_KEY": "   "}, INDIVIDUAL_DEFAULT_TURN_HOST, EXECUTOR_KIND_INDIVIDUAL),
     ],
 )
-def test_default_resolution_always_names_the_managed_executor(environ):
+def test_default_resolution_reads_back_the_executor_it_selected(
+    environ, expected_host, expected_kind
+):
     default_host = resolve_default_turn_host(environ)
     binding = managed_executor_binding(
         default_host,
@@ -234,21 +240,21 @@ def test_default_resolution_always_names_the_managed_executor(environ):
         module_probe=_RUNTIME,
     )
 
-    # The default host comes from the product default, not from the credential,
-    # so the readback always describes the managed executor. Whether it may run
-    # is a separate, explicitly projected fact.
-    assert default_host == MANAGED_TURN_HOST
-    assert binding["executor_kind"] == EXECUTOR_KIND_MANAGED
-    assert binding["available"] is (
-        "DEEPSEEK_API_KEY" in environ and bool(environ["DEEPSEEK_API_KEY"].strip())
-    )
+    # The default follows the operator credential, and the readback names the
+    # executor that default resolved to. Whether a managed executor may run here
+    # stays a separate, explicitly projected fact.
+    assert default_host == expected_host
+    assert binding["executor_kind"] == expected_kind
+    if expected_kind == EXECUTOR_KIND_MANAGED:
+        assert binding["available"] is True
+        assert binding["unavailable_reason"] is None
 
 
-def test_endpoint_without_credential_is_reported_but_does_not_switch_host():
+def test_endpoint_without_credential_does_not_select_the_managed_default():
     environ = {"DEEPSEEK_BASE_URL": "https://example.invalid"}
     binding = managed_executor_binding("codex-cli", environ=environ)
 
-    assert resolve_default_turn_host(environ) == MANAGED_TURN_HOST
+    assert resolve_default_turn_host(environ) == INDIVIDUAL_DEFAULT_TURN_HOST
     assert binding["endpoint_env"] is None
 
 

@@ -246,21 +246,23 @@ def main() -> int:
         root = Path(directory)
         project, runtime, workspace, registry = _write_fixture(root)
 
-        # 1. The shipped default is the managed host, and without the operator
-        #    credential it refuses instead of borrowing a personal login.
+        # 1. Without the operator credential the shipped default is the
+        #    individual CLI host, so a default plan still runs here instead of
+        #    gating on a managed host nothing can authenticate.
         with _operator_credential(None), _harness_runtime(available=True):
             exit_code, payload = _run_cli(_plan_command(registry, runtime, project))
         assert exit_code == 0, payload
-        assert payload["host"]["kind"] == "dsh", payload
-        unbound = _managed_binding(payload)
-        assert unbound["operator_credential_bound"] is False, unbound
-        assert unbound["available"] is False, unbound
-        assert unbound["unavailable_reason"] == OPERATOR_CREDENTIAL_UNCONFIGURED, (
-            unbound
+        assert payload["host"]["kind"] == "codex-cli", payload
+        uncredentialed_default = payload["managed_executor"]
+        assert (
+            uncredentialed_default["executor_kind"] == EXECUTOR_KIND_INDIVIDUAL
+        ), uncredentialed_default
+        assert uncredentialed_default["operator_credential_bound"] is False, (
+            uncredentialed_default
         )
+        assert uncredentialed_default["available"] is None, uncredentialed_default
 
-        # 2. Configuring the credential authenticates that same selection; it
-        #    does not get to pick a different host.
+        # 2. The credential resolves and authenticates the managed default.
         with (
             _operator_credential("sk-fixture-operator"),
             _harness_runtime(available=True),
@@ -301,8 +303,9 @@ def main() -> int:
         assert individual["available"] is None, individual
         assert individual["operator_credential_bound"] is False, individual
 
-        # 5. Executing the unauthenticated managed default fails closed: typed
-        #    status, no host invocation, no journal, and no quota slot spend.
+        # 5. Executing an explicitly selected managed host without the
+        #    credential fails closed: typed status, no host invocation, no
+        #    journal, and no quota slot spend.
         with _operator_credential(None), _harness_runtime(available=True):
             exit_code, refusal = _run_cli(
                 _run_once_command(
@@ -311,6 +314,7 @@ def main() -> int:
                     project,
                     workspace,
                     instance="managed-executor-unauthenticated",
+                    host="dsh",
                 )
             )
         assert exit_code == 1, refusal
