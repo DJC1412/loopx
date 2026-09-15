@@ -194,6 +194,8 @@ def _run_turn(
                 "json",
                 "turn",
                 "run-once",
+                "--host",
+                "generic-cli",
                 "--goal-id",
                 GOAL_ID,
                 "--agent-id",

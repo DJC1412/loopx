@@ -729,6 +729,8 @@ def _mode_variant_commands(
         + [
             "turn",
             "run-once",
+            "--host",
+            "generic-cli",
             "--goal-id",
             GOAL_ID,
             "--agent-id",
