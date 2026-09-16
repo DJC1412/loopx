@@ -403,13 +403,13 @@ journal 与配额语义；B 作为上游接口出现时的低成本替代；只�
 
 在 `43d362532`，团队入端已交付有界预览、业主确认与首批 Todo 物化；尚未验收正在运行、预算受约束或完整意图对齐的团队。[整体路线总纲](loopx-overall-roadmap-v0.zh-CN.md) 拥有跨 RFC 优先级及 F1–F7/R1–R7；本文保留 runtime 选型及其资格证据，不另建团队架构。
 
-已交付边界为 `steward_team_plan_preview_v0`、kind `steward_team_plan_preview`，经 `loopx/control_plane/work_items/governed_transition_proposal.py` 与 Chat `team.plan` 分派。计划点名确切 Goal、1–8 条 lane、注册 Agent、首个 Todo 的 text/priority/class/action、acceptance、quota envelope 与 stop condition。校验结果 `applies: false`；预览不等于执行。
+已交付边界为 `steward_team_plan_preview_v0`、kind `steward_team_plan_preview`，经 `loopx/control_plane/work_items/governed_transition_proposal.py` 与 Chat `team.plan` 分派。计划点名确切 Goal、1–8 条 lane、注册 Agent、首个 Todo 的 text/priority/class/action、acceptance，以及计划级 quota envelope 与 stop condition。校验结果 `applies: false`，并对其校验的每个字段给出分类——lane 的首个有界 Todo 是执行约束、它的 acceptance 是留存验收引用、objective/envelope/stop condition 是 advisory——同时拒绝要求本机强制一个本机无人承担的计划级限制的计划。预览不等于执行。
 
 | 边界 | 已交付行为 | 剩余限制 |
 | --- | --- | --- |
 | 校验/准入（#4519/#4522/#4532/#4533） | 确切 Goal、注册 Agent、支持的 advancement kind、有界公开安全字段；按通道范围查询 Goal；缺少事实时丢弃提案并保留答案正文 | `ready` 只校验注册/action 支持，不证明执行器健康、工具资格或预算准入 |
 | Staffing gap | 未注册 Agent 产生 `agent_not_registered` 并保留 `declined_first_todo`；显式 `capability_not_granted` / `audience_not_authorized` gap 不允许工作 | 存在这些 reason code 不证明全部 capability/audience 条件已经自动检测 |
-| 物化（#4524/#4528/#4535/#4538） | 重新校验点名 Goal，逐 ready lane 调 canonical Todo owner；回执保存 proposal digest 与有界 `lane_todo_ids`，兼容旧回执且没有 monitor key | 确认的 priority 丢失；acceptance/quota/stop 未成为此路径的执行约束；没有整队原子提交或自动 partial recovery 证明 |
+| 物化（#4524/#4528/#4535/#4538） | 重新校验点名 Goal，逐 ready lane 调 canonical Todo owner；确认的 priority 保留在 lane Todo 自己的标签里；回执保存 proposal digest、有界 `lane_todo_ids` 与每条 lane 的留存 acceptance；兼容旧回执且没有 monitor key | 计划级 envelope 与 stop condition 仍为 advisory，声明为强制会被拒绝；没有整队原子提交或自动 partial recovery 证明 |
 | 确认（#4547/#4548/#4552） | 现有前端展示 lanes/gaps 并提交 `team.plan`，bundle 与 browser fixture 已交付；产生计划的**管家会话本身也会列出该通道存入的卡片**，业主在说出这句话的地方即可确认，而为已选 Goal 拉取的提案仍留在该 Goal 工作区 | 此 fixture 未验收 Lark 或真实 worker 执行；确认回读在该 fixture 之后已修复（确认后的 lane 保留声明的优先级，部分落地返回缺口数量，无 lane 可组建的计划记为 typed failure） |
 | 新鲜度 | registry bytes 变化会使 Chat preview stale；可选 `intent_basis` 在物化前读取 alignment source facts | commit 未绑定精确 Goal intent/授权/工作前置条件；`intent_basis` 不是完整意图修订或 CAS fence |
 

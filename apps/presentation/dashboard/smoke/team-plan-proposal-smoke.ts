@@ -94,6 +94,13 @@ const plan = {
   gaps: [{ lane_id: "lane_review", reason_code: "agent_not_registered" }],
   quota_envelope: { slots: 4, window: "1d" },
   stop_condition: "every lane reports a typed outcome or a stated gap",
+  field_classification: {
+    objective: "advisory",
+    quota_envelope: "advisory",
+    stop_condition: "advisory",
+    "lane.first_todo": "execution_constraint",
+    "lane.acceptance": "retained_acceptance_reference",
+  },
   applies: false,
 };
 
@@ -130,6 +137,9 @@ const translate = (key: string, values?: Record<string, string | number>) => {
     "proposal.field.quotaEnvelope": "Quota envelope",
     "proposal.field.stopCondition": "Stop condition",
     "proposal.teamPlan.acceptanceShort": "acceptance",
+    "proposal.teamPlan.class.advisory": "advisory, not enforced",
+    "proposal.teamPlan.class.executionConstraint": "enforced",
+    "proposal.teamPlan.class.retainedAcceptance": "retained acceptance",
     "proposal.teamPlan.gapLane": "unstaffed",
     "proposal.teamPlan.laneUnstaffed": "staffing gap, no first Todo",
   };
@@ -149,8 +159,8 @@ check(readyLane?.label === "agent-backend", "a ready lane names the Agent that r
 check(
   readyLane?.value.includes("P1") === true
   && readyLane?.value.includes("Implement the bounded intake") === true
-  && readyLane?.value.includes("acceptance: the bounded Todo is created through the canonical owner") === true,
-  "a ready lane shows its first bounded Todo, its priority and its acceptance signal",
+  && readyLane?.value.includes("retained acceptance: the bounded Todo is created through the canonical owner") === true,
+  "a ready lane shows its first bounded Todo, its priority and its retained acceptance signal",
 );
 check(
   gapLane?.value.startsWith("unstaffed · agent_not_registered") === true
@@ -158,14 +168,30 @@ check(
   "a gap lane says it is unstaffed, names the reason and keeps the work it did not staff",
 );
 check(byKey.get("lane_gaps")?.value === "lane_review: agent_not_registered", "the gap summary joins lane and reason");
-check(byKey.get("quota_envelope")?.value === "slots: 4 · window: 1d", "the quota envelope is shown as data");
 check(
-  byKey.get("stop_condition")?.value === "every lane reports a typed outcome or a stated gap",
-  "the stop condition is shown",
+  byKey.get("quota_envelope")?.value === "slots: 4 · window: 1d · advisory, not enforced",
+  "the quota envelope is shown as data and as advisory",
+);
+check(
+  byKey.get("stop_condition")?.value
+    === "every lane reports a typed outcome or a stated gap · advisory, not enforced",
+  "the stop condition is shown as advisory",
 );
 check(
   fields.some((field) => field.value.includes("agent-") === true && field.value.includes("ready") === true) === false,
   "the card never renders a lane as already created",
+);
+
+// A plan whose host emitted no classification must not get one invented for it:
+// the card shows what it was given, and an unclassified field is not a binding.
+const unclassified = teamPlanFields(
+  { goal_id: GOAL_ID, plan: { ...plan, field_classification: undefined } },
+  translate as never,
+);
+check(
+  new Map(unclassified.map((field) => [field.key, field.value])).get("quota_envelope")
+    === "slots: 4 · window: 1d",
+  "an unclassified envelope is shown without a classification the host did not state",
 );
 
 if (process.exitCode !== 1) console.log("team plan proposal smoke ok");

@@ -21,11 +21,39 @@ function asText(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+/**
+ * What kind of claim a plan field is, as the host classified it.
+ *
+ * The host emits this beside the plan it admitted, and an admitted preview
+ * carries it inside the preview itself, so both places are host facts rather
+ * than a claim the plan makes. A field the host did not classify reads as
+ * unclassified instead of being assumed to bind.
+ */
+function fieldClassification(
+  parameters: Record<string, unknown>,
+  plan: Record<string, unknown>,
+): Record<string, unknown> {
+  return { ...asRecord(parameters.field_classification), ...asRecord(plan.field_classification) };
+}
+
+function classificationLabel(
+  classification: Record<string, unknown>,
+  key: string,
+  t: WorkspaceTranslate,
+): string {
+  const value = asText(classification[key]);
+  if (value === "execution_constraint") return t("proposal.teamPlan.class.executionConstraint");
+  if (value === "retained_acceptance_reference") return t("proposal.teamPlan.class.retainedAcceptance");
+  if (value === "advisory") return t("proposal.teamPlan.class.advisory");
+  return "";
+}
+
 export function teamPlanFields(
   parameters: Record<string, unknown>,
   t: WorkspaceTranslate,
 ): TeamPlanPreviewField[] {
   const plan = asRecord(parameters.plan);
+  const classification = fieldClassification(parameters, plan);
   const fields: TeamPlanPreviewField[] = [];
   const goalId = asText(parameters.goal_id) || asText(plan.goal_id);
   if (goalId) {
@@ -61,12 +89,18 @@ export function teamPlanFields(
       asText(todo.action_kind),
       asText(todo.text),
     ].filter(Boolean).join(" · ");
+    // A lane's first Todo is the work this confirmation creates, so it carries
+    // its class; the acceptance the lane ends on is retained beside that work
+    // rather than enforced by it.
+    const acceptanceLabel =
+      classificationLabel(classification, "lane.acceptance", t)
+      || t("proposal.teamPlan.acceptanceShort");
     fields.push({
       key: `lane_${laneId}`,
       label: agentId || laneId,
       value: [
         laneValue || t("proposal.teamPlan.laneUnstaffed"),
-        acceptance ? `${t("proposal.teamPlan.acceptanceShort")}: ${acceptance}` : "",
+        acceptance ? `${acceptanceLabel}: ${acceptance}` : "",
       ].filter(Boolean).join(" · "),
     });
   });
@@ -90,7 +124,10 @@ export function teamPlanFields(
     fields.push({
       key: "quota_envelope",
       label: t("proposal.field.quotaEnvelope"),
-      value: envelopeEntries.map(([key, value]) => `${key}: ${String(value ?? "")}`).join(" · "),
+      value: [
+        envelopeEntries.map(([key, value]) => `${key}: ${String(value ?? "")}`).join(" · "),
+        classificationLabel(classification, "quota_envelope", t),
+      ].filter(Boolean).join(" · "),
     });
   }
   const stopCondition = asText(plan.stop_condition);
@@ -98,7 +135,9 @@ export function teamPlanFields(
     fields.push({
       key: "stop_condition",
       label: t("proposal.field.stopCondition"),
-      value: stopCondition,
+      value: [stopCondition, classificationLabel(classification, "stop_condition", t)]
+        .filter(Boolean)
+        .join(" · "),
     });
   }
   return fields;

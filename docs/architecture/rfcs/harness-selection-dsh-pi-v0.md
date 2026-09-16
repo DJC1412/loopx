@@ -522,14 +522,19 @@ The shipped boundary is `steward_team_plan_preview_v0`, kind
 `steward_team_plan_preview`, dispatched through
 `loopx/control_plane/work_items/governed_transition_proposal.py` and Chat
 `team.plan`. It names an exact Goal, 1–8 lanes, registered Agent identities,
-first Todo text/priority/class/action, acceptance, quota envelope and stop
-condition. Validation produces `applies: false`. Preview is not execution.
+first Todo text/priority/class/action, acceptance and a plan-level quota
+envelope and stop condition. Validation produces `applies: false`, classifies
+every field it validated -- a lane's first bounded Todo as an execution
+constraint, its acceptance as a retained acceptance reference, the objective,
+envelope and stop condition as advisory -- and refuses a plan that asks this
+host to enforce a plan-level limit no owner here enforces. Preview is not
+execution.
 
 | Boundary | Shipped behavior | Remaining limitation |
 | --- | --- | --- |
 | Validation/admission (#4519/#4522/#4532/#4533) | Exact Goal, registered Agents, supported advancement kinds and bounded public-safe fields; channel-scoped Goal lookup; unavailable facts drop the proposal while preserving answer text | `ready` checks registration/action support, not executor health, tool eligibility or budget admission |
 | Staffing gaps | Unknown Agent produces `agent_not_registered` and retains `declined_first_todo`; explicit `capability_not_granted` / `audience_not_authorized` gaps admit no work | These reason codes do not prove all capability/audience conditions are automatically detected |
-| Materialization (#4524/#4528/#4535/#4538) | Revalidates the named Goal; calls canonical Todo owner per ready lane; records proposal digest and bounded `lane_todo_ids`; existing receipt shape remains readable; no monitor key | Confirmed priority is dropped; acceptance/quota/stop are not execution constraints on this path; no atomic team commit or automatic partial-recovery proof |
+| Materialization (#4524/#4528/#4535/#4538) | Revalidates the named Goal; calls canonical Todo owner per ready lane; keeps the confirmed priority in the lane Todo's own label; records proposal digest, bounded `lane_todo_ids` and each lane's retained acceptance; existing receipt shape remains readable; no monitor key | The plan-level envelope and stop condition stay advisory and a claim that they are enforced is refused; no atomic team commit or automatic partial-recovery proof |
 | Confirmation (#4547/#4548/#4552) | Existing frontend displays lanes/gaps and submits `team.plan`; bundle and browser fixture shipped; the manager conversation now lists the card its own channel stored, so an owner confirms where the sentence was typed while a Goal-scoped fetch stays in that Goal's workspace | Lark and real worker execution were not qualified by this fixture; the confirmation readback was repaired after this fixture (a confirmed lane keeps its declared priority, a partial application reports its gap count, and a plan that staffs no lane is a typed failure) |
 | Freshness | Registry byte changes make the Chat preview stale; optional `intent_basis` reads alignment source facts before materialization | No exact Goal-intent/authorization/work precondition at commit; `intent_basis` is neither the full intent revision nor a CAS fence |
 

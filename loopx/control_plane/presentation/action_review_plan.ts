@@ -91,7 +91,18 @@ export type ReviewCardFrame = {
   rejectLabelKey: string;
   warningKey: string;
   focus: string;
-  fields: Array<{ key: string; value: string }>;
+  /**
+   * One line of the card, with the host's classification of the field it shows.
+   *
+   * The classification is the typed vocabulary the admission and apply path
+   * emit for a plan's fields: `execution_constraint` for work the confirmation
+   * creates, `retained_acceptance_reference` for the signal a lane ends on, and
+   * `advisory` for a fact that is kept and shown while nothing here enforces it.
+   * It stays a vocabulary rather than a sentence for the same reason the labels
+   * do: the surface owns the words. A field with no classification is one the
+   * host did not classify, and a surface must not assume it binds.
+   */
+  fields: Array<{ key: string; value: string; classification?: string }>;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -139,6 +150,18 @@ function laneFieldValue(laneValue: unknown): string {
   ].filter(Boolean).join(" · ");
 }
 
+/**
+ * The host's classification of one plan field.
+ *
+ * This frame is compiled only from a validated preview, which carries the
+ * classification the host emitted for its own fields, so the value is a host
+ * fact rather than a claim the plan makes about itself.
+ */
+function fieldClassification(plan: JsonRecord, key: string): string | undefined {
+  const classification = objectValue(plan.field_classification);
+  return classification ? textValue(classification[key]) ?? undefined : undefined;
+}
+
 function envelopeFieldValue(value: unknown): string {
   const envelope = objectValue(value) ?? {};
   return Object.entries(envelope)
@@ -167,10 +190,23 @@ export function compileReviewCardFrame(proposalValue: unknown): ReviewCardFrame 
   if (!proposalId || !stateFingerprint || !goalId) return undefined;
   const lanes = Array.isArray(plan.lanes) ? plan.lanes : [];
   const gaps = Array.isArray(plan.gaps) ? plan.gaps : [];
+  // A card line says what kind of claim it shows, so a surface cannot render
+  // work and an advisory envelope as the same kind of statement. A field the
+  // host did not classify keeps no classification instead of being assumed to
+  // bind, and a field carrying a classification the surface does not know is
+  // still data rather than a sentence this boundary invented.
   const fields = [
     { key: "goal", value: goalId },
-    { key: "objective", value: compactValue(plan.objective) },
-    ...lanes.map((lane, index) => ({ key: `lane_${index + 1}`, value: laneFieldValue(lane) })),
+    {
+      key: "objective",
+      value: compactValue(plan.objective),
+      classification: fieldClassification(plan, "objective"),
+    },
+    ...lanes.map((lane, index) => ({
+      key: `lane_${index + 1}`,
+      value: laneFieldValue(lane),
+      classification: fieldClassification(plan, "lane.first_todo"),
+    })),
     ...(gaps.length > 0
       ? [{
         key: "lane_gaps",
@@ -183,8 +219,16 @@ export function compileReviewCardFrame(proposalValue: unknown): ReviewCardFrame 
           .join(" · "),
       }]
       : []),
-    { key: "quota_envelope", value: envelopeFieldValue(plan.quota_envelope) },
-    { key: "stop_condition", value: compactValue(plan.stop_condition) },
+    {
+      key: "quota_envelope",
+      value: envelopeFieldValue(plan.quota_envelope),
+      classification: fieldClassification(plan, "quota_envelope"),
+    },
+    {
+      key: "stop_condition",
+      value: compactValue(plan.stop_condition),
+      classification: fieldClassification(plan, "stop_condition"),
+    },
   ].filter((field) => field.value.length > 0);
   return {
     schemaVersion: "review_card_frame_v0",

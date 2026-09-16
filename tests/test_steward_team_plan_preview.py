@@ -7,6 +7,10 @@ import pytest
 from loopx.control_plane.work_items.governed_transition_proposal import (
     _SETTLEMENT_PHASE_BY_PROPOSAL_KIND,
     GovernedTransitionSettlementPhase,
+    STEWARD_TEAM_PLAN_ENFORCEMENT_ADVISORY,
+    STEWARD_TEAM_PLAN_ENFORCEMENT_ENFORCED,
+    STEWARD_TEAM_PLAN_ENFORCEMENT_FIELDS,
+    STEWARD_TEAM_PLAN_FIELD_CLASSIFICATION,
     STEWARD_TEAM_PLAN_PREVIEW_KIND,
     STEWARD_TEAM_PLAN_PREVIEW_SCHEMA_VERSION,
     validate_steward_team_plan_preview,
@@ -291,6 +295,77 @@ def test_a_lane_without_work_must_keep_why_it_is_a_gap() -> None:
 def test_a_malformed_preview_fails_closed(mutation: dict, match: str) -> None:
     with pytest.raises(ValueError, match=match):
         _validate(_plan(**mutation))
+
+
+def test_every_plan_field_carries_the_host_classification() -> None:
+    """A reader can tell work from a limit nothing holds.
+
+    The classification is the host's verdict about its own fields, so it is
+    emitted with the preview rather than read from the plan: the plan-level
+    envelope and stop condition are advisory because no owner here enforces
+    them, while a lane's first Todo becomes the work the confirmation creates
+    and its acceptance is retained beside that work.
+    """
+
+    preview = _validate(_plan())
+
+    assert preview["field_classification"] == {
+        "objective": "advisory",
+        "quota_envelope": "advisory",
+        "stop_condition": "advisory",
+        "lane.first_todo": "execution_constraint",
+        "lane.acceptance": "retained_acceptance_reference",
+    }
+    # The contract is the value: a reader that edited the returned copy cannot
+    # change what the next preview says.
+    preview["field_classification"]["quota_envelope"] = "execution_constraint"
+    assert _validate(_plan())["field_classification"]["quota_envelope"] == "advisory"
+
+
+def test_declaring_an_enforced_limit_is_refused_before_confirmation() -> None:
+    """A limit nothing enforces may not be offered as one that binds.
+
+    Storing the claim as JSON would show the owner an envelope or stop condition
+    that no owner holds, so the plan is refused instead, naming the field and the
+    one value this host can honor.
+    """
+
+    for field_name in STEWARD_TEAM_PLAN_ENFORCEMENT_FIELDS:
+        plan = _plan(enforcement={field_name: STEWARD_TEAM_PLAN_ENFORCEMENT_ENFORCED})
+        with pytest.raises(ValueError) as refused:
+            _validate(plan)
+        message = str(refused.value)
+        assert field_name in message
+        assert "no plan-level enforcement owner" in message
+        assert STEWARD_TEAM_PLAN_ENFORCEMENT_ADVISORY in message
+
+    # A field this host does not classify for enforcement cannot be claimed
+    # either, so a plan cannot widen the vocabulary the card is read with.
+    with pytest.raises(ValueError, match="declares enforcement for a field it cannot enforce"):
+        _validate(_plan(enforcement={"lane.acceptance": STEWARD_TEAM_PLAN_ENFORCEMENT_ENFORCED}))
+    # An invented value is refused rather than coerced to the supported one.
+    with pytest.raises(ValueError, match="enforcement for quota_envelope must be"):
+        _validate(_plan(enforcement={"quota_envelope": "maybe"}))
+
+
+def test_declaring_the_supported_advisory_limit_changes_nothing() -> None:
+    """Declaring what the host already says is honored and adds no behavior."""
+
+    declared = _validate(
+        _plan(
+            enforcement={
+                field_name: STEWARD_TEAM_PLAN_ENFORCEMENT_ADVISORY
+                for field_name in STEWARD_TEAM_PLAN_ENFORCEMENT_FIELDS
+            }
+        )
+    )
+
+    # Default-off parity: a plan that declares the advisory limit and one that
+    # says nothing produce the same preview, field classification included.
+    assert declared == _validate(_plan())
+    assert STEWARD_TEAM_PLAN_FIELD_CLASSIFICATION["quota_envelope"] == (
+        STEWARD_TEAM_PLAN_ENFORCEMENT_ADVISORY
+    )
 
 
 def test_the_preview_kind_is_settled_only_at_pre_settlement() -> None:

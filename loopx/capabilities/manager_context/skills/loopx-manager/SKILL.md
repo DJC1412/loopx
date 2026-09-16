@@ -155,7 +155,11 @@ in the response envelope's `proposals` as exactly one item of kind
     }
   ],
   "quota_envelope": { "<the bounded envelope this team may use>" },
-  "stop_condition": "<the condition that ends the team>"
+  "stop_condition": "<the condition that ends the team>",
+  "enforcement": {
+    "quota_envelope": "advisory",
+    "stop_condition": "advisory"
+  }
 }
 ```
 
@@ -177,6 +181,17 @@ instead of padding the plan with work that cannot start. A preview that arrives
 without this item, or names a Goal you are not authorized for, is dropped
 rather than shown: the owner must never be offered a confirmation for work that
 cannot be staffed.
+
+The `enforcement` block says what each plan-level claim is, and only `advisory`
+is honest for both fields: LoopX spends quota per Turn through the quota owner
+and keeps a stop condition as the obligation the owner and the Agent carry, so
+no owner here enforces a plan-level envelope or stop condition. Write the two
+advisory declarations, and put a real bound where it is enforced instead of
+into this field. Declaring `enforced` for either field makes the preview be
+refused before the owner sees anything to confirm, because a confirmation may
+not present a limit that nothing holds. A lane needs no such declaration: the
+first bounded Todo it names is the work the confirmation creates, and the
+acceptance signal is retained beside it as the fact the lane ends on.
 
 Core owns truth and permissions. This skill supplies reasoning guidance, not
 new authority. Keep front-end and group answers within their respective scopes;

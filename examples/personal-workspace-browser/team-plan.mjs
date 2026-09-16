@@ -62,6 +62,13 @@ function teamPlanProposal() {
         gaps: [{ lane_id: "lane_review", reason_code: "agent_not_registered" }],
         quota_envelope: { slots: 4, window: "1d" },
         stop_condition: "every lane reports a typed outcome or a stated gap",
+        field_classification: {
+          objective: "advisory",
+          quota_envelope: "advisory",
+          stop_condition: "advisory",
+          "lane.first_todo": "execution_constraint",
+          "lane.acceptance": "retained_acceptance_reference",
+        },
         applies: false,
       },
       requested_by: "owner",
@@ -167,8 +174,8 @@ export const teamPlanScenario = {
         "a ready lane shows its first bounded Todo with its priority and action kind",
       );
       check(
-        previewText.includes("验收: the bounded Todo is created through the canonical owner"),
-        "a ready lane shows its acceptance signal",
+        previewText.includes("留存验收: the bounded Todo is created through the canonical owner"),
+        "a ready lane shows its retained acceptance signal",
       );
       check(
         previewText.includes("agent-reviewer")
@@ -180,6 +187,11 @@ export const teamPlanScenario = {
       check(
         previewText.includes("配额包络") && previewText.includes("slots: 4") && previewText.includes("停止条件"),
         "the quota envelope and the stop condition render",
+      );
+      check(
+        previewText.includes("slots: 4 · window: 1d · 仅记录，不强制执行")
+        && previewText.includes("every lane reports a typed outcome or a stated gap · 仅记录，不强制执行"),
+        "the plan-level envelope and stop condition say they are advisory, not enforced",
       );
       check(previewText.includes("确认后会通过既有 owner"), "the card states what confirming does");
       check(

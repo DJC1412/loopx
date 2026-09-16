@@ -166,6 +166,13 @@ function teamPlanProposal() {
         gaps: [{ lane_id: "lane_review", reason_code: "agent_not_registered" }],
         quota_envelope: { slots: 4, window: "1d" },
         stop_condition: "every lane reports a typed outcome or a stated gap",
+        field_classification: {
+          objective: "advisory",
+          quota_envelope: "advisory",
+          stop_condition: "advisory",
+          "lane.first_todo": "execution_constraint",
+          "lane.acceptance": "retained_acceptance_reference",
+        },
         applies: false,
       },
     },
@@ -206,6 +213,15 @@ test("a validated plan compiles into a confirmation card frame", () => {
     fields.get("stop_condition"),
     "every lane reports a typed outcome or a stated gap",
   );
+  // A surface has to be able to tell work from a limit nothing holds, so every
+  // line carries the host's classification of the field it shows.
+  const classification = new Map(frame.fields.map((field) => [field.key, field.classification]));
+  assert.equal(classification.get("lane_1"), "execution_constraint");
+  assert.equal(classification.get("quota_envelope"), "advisory");
+  assert.equal(classification.get("stop_condition"), "advisory");
+  assert.equal(classification.get("objective"), "advisory");
+  // The Goal line is the frame's own identity, not a field the plan claimed.
+  assert.equal(classification.get("goal"), undefined);
   assert.equal(frame.focus, "goal-1 · 2 lanes");
   // Labels are keys, never sentences: this boundary stays language-neutral and
   // the surface owns the words it renders.

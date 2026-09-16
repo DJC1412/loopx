@@ -39,6 +39,12 @@ def test_manager_guidance_orders_one_team_preview_before_any_effect() -> None:
     # wrap is a layout choice, not a change in what the steward is told.
     prose = " ".join(text.split())
     assert "instead of inventing a lane, an Agent, a capability, or an action kind" in prose
+    # A plan-level limit is only honest as advisory, and saying otherwise is
+    # refused before the owner is offered a confirmation.
+    assert '"enforcement"' in text
+    assert '"quota_envelope": "advisory"' in text
+    assert "no owner here enforces a plan-level envelope or stop condition" in prose
+    assert "refused before the owner sees anything to confirm" in prose
 
 
 def test_the_owner_visible_failure_names_the_executor_that_refused() -> None:

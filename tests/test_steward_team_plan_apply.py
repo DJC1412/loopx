@@ -12,6 +12,7 @@ from loopx.control_plane.work_items.governed_transition_proposal import (
     GovernedTransitionSettlementPhase,
     settle_governed_transition_proposals,
     validate_governed_transition_receipts,
+    validate_steward_team_plan_preview,
 )
 
 GOAL_ID = "team-plan-apply-fixture"
@@ -134,6 +135,53 @@ def test_a_confirmed_plan_creates_each_ready_lane_first_todo(tmp_path: Path) -> 
     assert f"claimed_by={AGENT_ID}" in state
     # One lane, one Todo: no monitor rows, no extra work.
     assert state.count("loopx:todo ") == 1
+
+
+def test_a_plan_claiming_a_limit_nothing_enforces_creates_nothing(
+    tmp_path: Path,
+) -> None:
+    """The refusal protects the owner before the commitment, not after it.
+
+    The plan asks this host to enforce a plan-level envelope it has no owner
+    for. Refusing it at apply is what keeps a confirmation from being offered
+    for work whose stated limit nothing holds, so the check has to run before
+    the first lane Todo is written rather than beside it.
+    """
+
+    project, registry_path = _fixture(tmp_path)
+    proposal = _proposal()
+    proposal["enforcement"] = {"quota_envelope": "enforced"}
+
+    with pytest.raises(ValueError, match="no plan-level enforcement owner"):
+        _settle(registry_path, proposal)
+
+    assert "loopx:todo " not in _todos(project)
+
+
+def test_the_stored_card_still_applies_with_its_field_classification(
+    tmp_path: Path,
+) -> None:
+    """The confirmation surface stores the validated preview, so it must re-read.
+
+    A card is projected from the preview the host already admitted, which now
+    carries the classification of its own fields. The apply re-validates that
+    stored payload, so the added field has to round-trip instead of turning an
+    admitted plan into one the settlement cannot read.
+    """
+
+    project, registry_path = _fixture(tmp_path)
+    preview = validate_steward_team_plan_preview(
+        _proposal(),
+        registered_agent_ids=[AGENT_ID],
+        supported_action_kinds=["implement"],
+    )
+
+    receipts = _settle(registry_path, {**preview, "proposal_id": "proposal-team-plan"})
+
+    assert preview["field_classification"]["quota_envelope"] == "advisory"
+    assert receipts[0]["status"] == "committed"
+    assert receipts[0]["action"] == "created"
+    assert "loopx:todo " in _todos(project)
 
 
 def test_a_gap_lane_creates_nothing_and_a_replay_adds_no_second_row(

@@ -410,6 +410,21 @@ def steward_team_plan_intent_basis(
     )
 
 
+def steward_team_plan_field_classification() -> dict[str, str]:
+    """Say what kind of claim each plan field is, for the reader that shows it.
+
+    A confirmation surface lists what the owner is about to accept, and the two
+    plan-level claims are the ones a reader could mistake for limits: a quota
+    envelope and a stop condition are kept and displayed, but nothing in this
+    host enforces either at plan level. The classification is the host's own
+    verdict about its own fields rather than a claim the plan makes, so it is
+    emitted here and shown beside the field instead of being inferred from the
+    field's prose. A returned copy keeps a reader from editing the contract.
+    """
+
+    return dict(STEWARD_TEAM_PLAN_FIELD_CLASSIFICATION)
+
+
 def _lane_todo_text(text: str, priority: str) -> str:
     """Give a lane's first Todo the priority the owner confirmed.
 
@@ -686,6 +701,30 @@ def settle_governed_transition_proposals(
 STEWARD_TEAM_PLAN_PREVIEW_SCHEMA_VERSION = "steward_team_plan_preview_v0"
 STEWARD_TEAM_PLAN_LANE_LIMIT = 8
 STEWARD_TEAM_PLAN_PRIORITIES = ("P0", "P1", "P2", "P3")
+# What kind of claim each plan field is. Every field a plan carries is exactly
+# one of three things, so a reader never has to guess whether a limit binds:
+# work the host turns into machine-enforced state, an acceptance reference
+# retained beside that work, or a fact that is kept and displayed while
+# enforcing nothing here.
+STEWARD_TEAM_PLAN_FIELD_CLASSIFICATION = {
+    "objective": "advisory",
+    "quota_envelope": "advisory",
+    "stop_condition": "advisory",
+    "lane.first_todo": "execution_constraint",
+    "lane.acceptance": "retained_acceptance_reference",
+}
+# The plan fields a plan may declare an enforcement intent for, and the two
+# values that intent may take. The host's own classification above already says
+# a plan-level envelope and stop condition are advisory: quota is spent per Turn
+# through the quota owner, and a stop condition is the obligation the owner and
+# the Agent keep, not a bound the confirmation installs. The declaration exists
+# so that "keep this enforced" has a typed place to be said, and so the host can
+# refuse it instead of storing a limit nothing holds. Lane claims are absent
+# because a lane's first bounded Todo *is* how work is enforced here: it becomes
+# canonical work, so there is no unhonored lane claim to refuse.
+STEWARD_TEAM_PLAN_ENFORCEMENT_FIELDS = ("quota_envelope", "stop_condition")
+STEWARD_TEAM_PLAN_ENFORCEMENT_ADVISORY = "advisory"
+STEWARD_TEAM_PLAN_ENFORCEMENT_ENFORCED = "enforced"
 _GOAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,159}$")
 # The reasons a plan may declare for a lane it cannot staff itself.
 STEWARD_TEAM_PLAN_GAP_REASONS = (
@@ -771,6 +810,47 @@ def _declined_todo(value: object) -> dict[str, Any]:
             declined.get("action_kind"), "declined_first_todo action_kind"
         ),
     }
+
+
+def _refuse_unhonored_enforcement(plan: Mapping[str, Any]) -> None:
+    """Refuse a plan that asks this host to enforce what it cannot.
+
+    A plan-level quota envelope and stop condition are kept and shown, and no
+    owner here enforces either of them at plan level. A plan that says otherwise
+    is refused before the owner is offered a confirmation: storing the claim as
+    JSON would present a limit that nothing holds, which is exactly what a
+    confirmation surface must not do. The refusal names the field and the one
+    value this host can honor, so the answer can be corrected instead of guessed
+    at.
+    """
+
+    declared = plan.get("enforcement")
+    if declared is None:
+        # Not declaring an enforcement intent is not a request for one. The
+        # host's own classification still says these fields are advisory.
+        return
+    claims = _mapping(declared, "enforcement")
+    validate_public_safe_value(claims, path="enforcement")
+    for field_name, raw_value in sorted(
+        (str(key), value) for key, value in claims.items()
+    ):
+        value = str(raw_value or "")
+        if field_name not in STEWARD_TEAM_PLAN_ENFORCEMENT_FIELDS:
+            raise ValueError(
+                "steward team plan preview declares enforcement for a field it "
+                f"cannot enforce: {field_name}"
+            )
+        if value == STEWARD_TEAM_PLAN_ENFORCEMENT_ENFORCED:
+            raise ValueError(
+                f"steward team plan preview cannot enforce {field_name}: this host "
+                "has no plan-level enforcement owner for it, so declare "
+                f"'{STEWARD_TEAM_PLAN_ENFORCEMENT_ADVISORY}' or drop the claim"
+            )
+        if value != STEWARD_TEAM_PLAN_ENFORCEMENT_ADVISORY:
+            raise ValueError(
+                f"steward team plan preview enforcement for {field_name} must be "
+                f"'{STEWARD_TEAM_PLAN_ENFORCEMENT_ADVISORY}'"
+            )
 
 
 def validate_steward_team_plan_preview(
@@ -934,6 +1014,10 @@ def validate_steward_team_plan_preview(
     if not envelope:
         raise ValueError("steward team plan preview requires a quota envelope")
     validate_public_safe_value(envelope, path="quota_envelope")
+    # A plan may not present work as enforced when no owner here enforces it.
+    # This runs before the preview is built, so a claim the host cannot honor is
+    # refused before confirmation rather than carried into the card.
+    _refuse_unhonored_enforcement(plan)
     preview = {
         "schema_version": STEWARD_TEAM_PLAN_PREVIEW_SCHEMA_VERSION,
         "kind": STEWARD_TEAM_PLAN_PREVIEW_KIND,
@@ -943,6 +1027,10 @@ def validate_steward_team_plan_preview(
         "gaps": gaps,
         "quota_envelope": dict(envelope),
         "stop_condition": _plan_text(plan.get("stop_condition"), "stop_condition"),
+        # Every field above is classified, so the confirmation surface can show
+        # an advisory envelope as advisory instead of listing it beside real
+        # work with nothing to tell them apart.
+        "field_classification": steward_team_plan_field_classification(),
         # A preview is never an effect: the contract states it, so a reader does
         # not have to know which materializers happen to be registered.
         "applies": False,

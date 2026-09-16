@@ -530,7 +530,7 @@ class ChatActionNormalizationMixin:
             # and the host's shipped action kinds, and the apply re-validates the
             # same payload with the host's own facts before it creates anything,
             # so the stored parameters are never the thing that authorizes work.
-            validate_steward_team_plan_preview(
+            admitted = validate_steward_team_plan_preview(
                 plan,
                 registered_agent_ids=registered_agent_ids_for_goal(goal),
                 supported_action_kinds=sorted(TODO_ACTION_KIND_ADVANCEMENT_VALUES),
@@ -538,6 +538,12 @@ class ChatActionNormalizationMixin:
             return {
                 "goal_id": goal_id,
                 "plan": dict(plan),
+                # The classification is the host's verdict about the fields of
+                # the plan it just admitted, so it is stored beside the plan
+                # rather than inside it: the card can then show the plan-level
+                # envelope and stop condition as advisory instead of listing
+                # them beside real work with nothing to tell them apart.
+                "field_classification": admitted["field_classification"],
                 "requested_by": _opaque(
                     values.get("requested_by") or "owner", field="requested_by"
                 ),
