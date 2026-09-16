@@ -172,6 +172,7 @@ def build_autonomous_replan_cli_actions(
     delivery_args = (
         "--delivery-batch-scale single_surface "
         "--delivery-outcome outcome_progress "
+        "--delivery-workspace-path <delivery-worktree> "
         if settlement_chain_ready
         else ""
     )
@@ -181,7 +182,7 @@ def build_autonomous_replan_cli_actions(
         "--progress-scope agent_lane "
         "--classification bounded_replan_progress "
         f"{delivery_args}{semantic_delta_args}"
-        f"{settlement_args}{scoped_cli_args}"
+        f"{settlement_args}{scoped_cli_args} --autonomous-replan-recorded"
     )
     if not settlement_chain_ready:
         return [refresh_action]
