@@ -1036,3 +1036,46 @@ class ChatActionStore:
             proposal["updated_at"] = now
             self._write(payload)
             return proposal
+
+    def record_team_plan_recovery(
+        self, proposal_id: str, *, receipt: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Replace the receipt of an already applied plan with its recovery.
+
+        A recovery finishes lanes a confirmed plan left unstaffed, so it can
+        never be a first apply: the proposal has to be `applied` and its stored
+        receipt has to be the one the recovery is continuing from. Replacing
+        that receipt wholesale is what keeps the plan's readback single-sourced
+        -- the lane identities, the outcome, the remaining gap count and the
+        attempt history all move together under one lock.
+        """
+
+        token = _opaque_id(proposal_id, field="proposal_id")
+        with exclusive_file_lock(
+            self.path,
+            agent_id="loopx-chat",
+            operation="record_team_plan_recovery",
+        ):
+            payload = self._read()
+            proposal = payload["proposals"].get(token)
+            if not isinstance(proposal, dict):
+                raise KeyError("typed Chat action proposal was not found")
+            if str(proposal.get("status") or "") != "applied":
+                raise ActionConflictError(
+                    "only an applied team plan can record a recovery"
+                )
+            if not isinstance(proposal.get("receipt"), Mapping):
+                raise ActionConflictError(
+                    "an applied team plan needs its receipt before a recovery"
+                )
+            safe_receipt = _safe_json_value(dict(receipt), path="receipt")
+            if not isinstance(safe_receipt, dict):
+                raise ValueError("receipt must be an object")
+            _opaque_id(safe_receipt.get("receipt_id"), field="receipt.receipt_id")
+            _opaque_id(safe_receipt.get("outcome"), field="receipt.outcome")
+            if safe_receipt.get("projection_verified") is not True:
+                raise ValueError("receipt.projection_verified must be true")
+            proposal["receipt"] = safe_receipt
+            proposal["updated_at"] = _utc_now()
+            self._write(payload)
+            return proposal

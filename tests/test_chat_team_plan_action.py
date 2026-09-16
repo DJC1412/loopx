@@ -323,6 +323,169 @@ def test_a_lane_that_fails_before_any_work_is_an_error_not_a_partial(
         service.apply(_preview(service, _two_lane_plan())["proposal_id"])
 
     assert "loopx:todo " not in _todos(project)
+def _unstaffed_second_lane_plan(*, second_agent: str = "agent-beta") -> dict:
+    """One side of the recovery cases: a plan whose second lane is unstaffed.
+
+    Main's `_two_lane_plan` staffs both lanes on the same Agent, so it cannot
+    express the F4 gap. This variant assigns the second lane to another Agent,
+    which makes it a staffing gap on this host until that Agent is registered.
+    """
+
+    plan = _plan()
+    plan["lanes"].append(
+        {
+            "lane_id": "lane-beta",
+            "agent_id": second_agent,
+            "acceptance": "The review lane's receipt is recorded",
+            "first_todo": {
+                "text": "Advance the review lane",
+                "priority": "P1",
+                "task_class": "advancement_task",
+                "action_kind": "validate",
+            },
+        }
+    )
+    return plan
+
+
+def _register_agent(registry_path: Path, agent_id: str) -> None:
+    """Register one more Agent for the Goal, exactly as a host change would."""
+
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    registered = registry["goals"][0]["coordination"]["registered_agents"]
+    registry["goals"][0]["coordination"]["registered_agents"] = [*registered, agent_id]
+    registry_path.write_text(json.dumps(registry), encoding="utf-8")
+
+
+def test_a_partially_applied_plan_can_be_finished_without_confirming_again(
+    tmp_path: Path,
+) -> None:
+    """The lanes a confirmed plan left unstaffed stay recoverable.
+
+    R1's exit names this: a re-entrant apply has to finish a partial plan
+    without a fresh owner confirmation. The confirmation already happened, the
+    lanes are already recorded, and what moved is the host fact that stopped one
+    of them -- so the plan records the commitment it still has to meet and the
+    next apply completes it instead of replaying an empty success.
+    """
+
+    project, registry_path, service = _fixture(tmp_path, agents=(AGENT_ID,))
+    preview = _preview(service, _unstaffed_second_lane_plan())
+
+    applied = service.apply(preview["proposal_id"])["proposal"]
+    assert applied["status"] == "applied"
+    receipt = applied["receipt"]
+    assert receipt["outcome"] == "team_plan_partially_applied"
+    assert receipt["gap_count"] == 1
+    first_lane_todo_ids = receipt["resource_ids"]["lane_todo_ids"]
+    assert len(first_lane_todo_ids) == 1
+    cursor = receipt["recovery_cursor"]
+    assert cursor["schema_version"] == "team_plan_recovery_cursor_v0"
+    # The cursor names the lane the confirmation left unstaffed and the plan it
+    # belongs to, so a later recovery can prove it is completing this plan.
+    assert cursor["gap_lane_ids"] == ["lane-beta"]
+    assert len(cursor["plan_digest"]) == 64
+    assert cursor["attempts"] == []
+    assert _todos(project).count("loopx:todo ") == 1
+
+    # The Agent the second lane needs is registered, which is the change that
+    # makes the lane staffable. It does not invalidate the commitment the owner
+    # already confirmed, so recovering it needs no second confirmation.
+    _register_agent(registry_path, "agent-beta")
+
+    recovered = service.apply(preview["proposal_id"])["proposal"]
+    assert recovered["status"] == "applied"
+    receipt = recovered["receipt"]
+    assert receipt["outcome"] == "team_plan_applied"
+    assert "gap_count" not in receipt
+    lane_todo_ids = receipt["resource_ids"]["lane_todo_ids"]
+    assert len(lane_todo_ids) == 2
+    # The lane that already had its Todo keeps it; the recovery created only the
+    # lane that was missing.
+    assert first_lane_todo_ids[0] in lane_todo_ids
+    assert len(receipt["lanes"]) == 2
+    assert [lane["disposition"] for lane in receipt["lanes"]] == ["reused", "created"]
+    attempt = receipt["recovery_cursor"]["attempts"][-1]
+    assert attempt["outcome"] == "recovered"
+    assert attempt["remaining_gap_lane_ids"] == []
+    assert attempt["recovered_lane_ids"] == ["lane-beta"]
+    assert receipt["recovery_cursor"]["gap_lane_ids"] == []
+    assert receipt["recovered_lane_ids"] == ["lane-beta"]
+    assert _todos(project).count("loopx:todo ") == 2
+
+
+def test_a_recovery_that_staffs_nothing_creates_nothing_and_says_so(
+    tmp_path: Path,
+) -> None:
+    """Re-applying a plan whose host still cannot staff the lane is a no-op."""
+
+    project, _registry_path, service = _fixture(tmp_path, agents=(AGENT_ID,))
+    preview = _preview(service, _unstaffed_second_lane_plan())
+    applied = service.apply(preview["proposal_id"])["proposal"]
+    before = _todos(project)
+
+    again = service.apply(preview["proposal_id"])["proposal"]
+
+    receipt = again["receipt"]
+    assert receipt["outcome"] == "team_plan_partially_applied"
+    assert receipt["gap_count"] == 1
+    assert len(receipt["resource_ids"]["lane_todo_ids"]) == 1
+    assert _todos(project) == before
+    attempt = receipt["recovery_cursor"]["attempts"][-1]
+    assert attempt["outcome"] == "no_progress"
+    assert attempt["recovered_lane_ids"] == []
+    assert attempt["remaining_gap_lane_ids"] == ["lane-beta"]
+
+
+def test_a_recovery_cannot_silently_drop_a_committed_lane(
+    tmp_path: Path,
+) -> None:
+    """A recovery may only add lanes; it may never replace one that exists.
+
+    If the host stops registering the Agent of a lane the plan already
+    committed, finishing the plan would commit work the host cannot run. The
+    refusal is recorded on the plan the owner already confirmed instead of
+    failing an apply that already happened, so the committed lanes stay exactly
+    as they are.
+    """
+
+    project, registry_path, service = _fixture(tmp_path, agents=(AGENT_ID,))
+    preview = _preview(service, _unstaffed_second_lane_plan())
+    applied = service.apply(preview["proposal_id"])["proposal"]
+    assert applied["receipt"]["gap_count"] == 1
+    before = _todos(project)
+
+    # The Agent of the lane that already has its Todo is no longer registered,
+    # and the Agent the missing lane needs is. Recovering now would finish a plan
+    # whose committed lane this host can no longer run.
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    registry["goals"][0]["coordination"]["registered_agents"] = ["agent-beta"]
+    registry_path.write_text(json.dumps(registry), encoding="utf-8")
+
+    recovered = service.apply(preview["proposal_id"])["proposal"]
+    assert recovered["status"] == "applied"
+    receipt = recovered["receipt"]
+    assert receipt["gap_count"] == 1
+    assert len(receipt["resource_ids"]["lane_todo_ids"]) == 1
+    assert _todos(project) == before
+    attempt = receipt["recovery_cursor"]["attempts"][-1]
+    assert attempt["outcome"] == "committed_lane_unstaffable"
+    assert attempt["unstaffable_lane_ids"] == ["lane-alpha"]
+
+
+def test_a_fully_applied_plan_is_not_recoverable(tmp_path: Path) -> None:
+    """A plan with no gap stays a replay, not a recovery."""
+
+    project, _registry_path, service = _fixture(tmp_path)
+    preview = _preview(service)
+    first = service.apply(preview["proposal_id"])["proposal"]
+    assert first["receipt"]["outcome"] == "team_plan_applied"
+    assert "recovery_cursor" not in first["receipt"]
+
+    again = service.apply(preview["proposal_id"])["proposal"]
+
+    assert again["receipt"] == first["receipt"]
+    assert _todos(project).count("loopx:todo ") == 1
 
 
 def _validated(preview_plan: dict) -> dict:
