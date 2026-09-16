@@ -22,6 +22,8 @@ from ..control_plane.quota.cli_projection import (
 from ..control_plane.quota.effect_program import SettlementIdentity
 from ..control_plane.quota.error_codes import (
     QuotaCommandValidationError,
+    QuotaActionSelectionConflictError,
+    QuotaActionSelectionConflictKind,
 )
 from ..control_plane.quota.heartbeat_receipt import (
     HEARTBEAT_RECEIPT_SCHEMA_VERSION,
@@ -268,11 +270,18 @@ def _apply_requested_quota_action_selection_preflight(
         return False
 
     if not isinstance(qualification_value, Mapping):
-        raise RuntimeError("requested action selection lacks typed qualification")
+        raise QuotaActionSelectionConflictError(
+            QuotaActionSelectionConflictKind.UNQUALIFIED,
+            requested_todo_id=requested_todo_id,
+            selected_todo_id=selected_todo_id,
+        )
     qualification_state = str(qualification.get("state") or "")
     if qualification_state not in {"deferred", "rejected"}:
-        raise RuntimeError(
-            "requested action selection qualification conflicts with its projection"
+        raise QuotaActionSelectionConflictError(
+            QuotaActionSelectionConflictKind.CONFLICT,
+            requested_todo_id=requested_todo_id,
+            selected_todo_id=selected_todo_id,
+            qualification_state=qualification_state,
         )
     qualification_reason = str(
         qualification.get("reason") or "candidate_not_currently_eligible"
