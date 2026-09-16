@@ -25,6 +25,7 @@ from loopx.control_plane.runtime.runtime_projection_route import (  # noqa: E402
     resolve_runtime_projection_route,
 )
 from loopx import doctor as doctor_module  # noqa: E402
+from loopx.paths import global_registry_path  # noqa: E402
 from loopx.presentation.renderers.status_markdown import (  # noqa: E402
     render_status_markdown,
 )
@@ -387,8 +388,10 @@ def main() -> None:
             shared_runtime=shared_runtime,
         )
         route_diagnostics = status["runtime_projection_routes"]
-        assert route_diagnostics == {"healthy": True}, route_diagnostics
+        assert route_diagnostics["healthy"] is True, route_diagnostics
+        assert route_diagnostics["goal_count"] == 1, route_diagnostics
         assert "runtime_projection_routes: healthy=True" in render_status_markdown(status)
+        assert "goals=1" in render_status_markdown(status), render_status_markdown(status)
 
         source_index = project_runtime / "goals" / GOAL_ID / "runs" / "index.jsonl"
         source_rows = [
@@ -420,7 +423,8 @@ def main() -> None:
             shared_runtime=shared_runtime,
         )
         lagging_routes = lagging_status["runtime_projection_routes"]
-        assert lagging_routes == {"healthy": False}, lagging_routes
+        assert lagging_routes["healthy"] is False, lagging_routes
+        assert lagging_routes["goal_count"] == 1, lagging_routes
         lagging_markdown = render_status_markdown(lagging_status)
         assert "runtime_projection_routes: healthy=False" in lagging_markdown
         assert "details=loopx doctor" in lagging_markdown
@@ -437,6 +441,23 @@ def main() -> None:
             item.get("goal_id") == GOAL_ID and item.get("status") == "lagging"
             for item in doctor_routes["items"]
         ), doctor_routes
+        # The operator-visible disagreement this guards against: `status` and
+        # `doctor` print the same `healthy` key, so they have to agree about the
+        # scope they read, and each surface has to name that scope in its
+        # rendered line instead of leaving a bare boolean.
+        assert doctor_routes["healthy"] is lagging_routes["healthy"], (
+            doctor_routes,
+            lagging_routes,
+        )
+        assert doctor_routes["goal_count"] == lagging_routes["goal_count"], (
+            doctor_routes,
+            lagging_routes,
+        )
+        doctor_markdown = doctor_module.render_doctor_markdown(doctor)
+        assert "runtime_projection_routes_healthy: `False`" in doctor_markdown
+        assert f"registry=`{global_registry_path(shared_runtime)}`" in doctor_markdown, doctor_markdown
+        assert f"goals=`{doctor_routes['goal_count']}`" in doctor_markdown, doctor_markdown
+        assert "counts=`" in doctor_markdown, doctor_markdown
 
         single_runtime = Path(tmp) / "single-runtime"
         single_registry, single_goal = write_route_source(

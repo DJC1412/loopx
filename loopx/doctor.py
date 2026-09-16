@@ -1186,7 +1186,10 @@ def render_doctor_markdown(payload: dict[str, Any]) -> str:
         f"- skill_delivery_mode: `{(payload.get('skill_delivery') or {}).get('mode')}`",
         f"- skill_delivery_status: `{(payload.get('skill_delivery') or {}).get('status')}`",
         f"- global_registry_writable: `{(payload.get('global_registry_writability') or {}).get('ok')}`",
-        f"- runtime_projection_routes_healthy: `{(payload.get('runtime_projection_routes') or {}).get('healthy')}`",
+        f"- runtime_projection_routes_healthy: `{(payload.get('runtime_projection_routes') or {}).get('healthy')}`"
+        f" (registry=`{(payload.get('global_registry_writability') or {}).get('path')}`,"
+        f" goals=`{(payload.get('runtime_projection_routes') or {}).get('goal_count')}`,"
+        f" counts=`{json.dumps((payload.get('runtime_projection_routes') or {}).get('counts') or {}, ensure_ascii=False, sort_keys=True)}`)",
         f"- user_local_bin_on_path: `{(payload.get('path') or {}).get('user_local_bin_on_path')}`",
         f"- python: `{(payload.get('python') or {}).get('executable')}`",
         f"- typescript_control_plane: `{typescript_control_plane.get('status')}`",
