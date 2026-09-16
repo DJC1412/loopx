@@ -296,6 +296,51 @@ def _apply_requested_quota_action_selection_preflight(
         if deferred
         else "quota_action_selection_rejected"
     )
+    # A workspace-repair obligation is the one deferral whose recovery is not a
+    # frontier question at all: the turn has to move off the shared checkout
+    # before any selection can be honored. Reported as "control_repair" it reads
+    # like an unrelated control-plane preemption, so the reason names the move
+    # and the recommendation names the worktree rerun.
+    workspace_repair_deferred = (
+        deferred
+        and payload.get("workspace_repair_allowed") is True
+        and execution_obligation.get("kind") == "agent_workspace_repair"
+    )
+    workspace_repair_contract = str(execution_obligation.get("contract") or "").strip()
+    if workspace_repair_deferred:
+        reason = (
+            "explicit action selection was deferred because this turn has to move "
+            f"the workspace first: {workspace_repair_contract}"
+            if workspace_repair_contract
+            else "explicit action selection was deferred because this turn has to "
+            "move the workspace off the shared checkout first"
+        )
+        recommended_action = (
+            "rerun quota should-run from an independent worktree or branch for this "
+            "agent instead of the shared checkout, with the same "
+            "--turn-instance-id and --todo-id"
+        )
+    else:
+        reason = (
+            "explicit action selection was deferred by the current "
+            f"delivery frontier: {qualification_reason}"
+            if deferred
+            else "explicit action selection is not currently eligible: "
+            f"{qualification_reason}"
+        )
+        recommended_action = (
+            "handle the current delivery preemption, then rerun quota "
+            "should-run with the same --turn-instance-id; omit --todo-id "
+            "first when a refreshed action portfolio is needed"
+            if deferred
+            else "the due monitor is visible as auxiliary context, not an "
+            "independently selectable action in the current advancement lane; "
+            "choose a current advancement Todo, or rerun after the monitor "
+            "becomes the hard lane"
+            if auxiliary_monitor
+            else "rerun quota should-run with the same --turn-instance-id "
+            "without --todo-id, then choose a currently eligible Todo"
+        )
     payload.update(
         {
             "ok": False,
@@ -306,26 +351,8 @@ def _apply_requested_quota_action_selection_preflight(
             "waiting_on": "codex",
             "status": error_code,
             "error_code": error_code,
-            "reason": (
-                "explicit action selection was deferred by the current "
-                f"delivery frontier: {qualification_reason}"
-                if deferred
-                else "explicit action selection is not currently eligible: "
-                f"{qualification_reason}"
-            ),
-            "recommended_action": (
-                "handle the current delivery preemption, then rerun quota "
-                "should-run with the same --turn-instance-id; omit --todo-id "
-                "first when a refreshed action portfolio is needed"
-                if deferred
-                else "the due monitor is visible as auxiliary context, not an "
-                "independently selectable action in the current advancement lane; "
-                "choose a current advancement Todo, or rerun after the monitor "
-                "becomes the hard lane"
-                if auxiliary_monitor
-                else "rerun quota should-run with the same --turn-instance-id "
-                "without --todo-id, then choose a currently eligible Todo"
-            ),
+            "reason": reason,
+            "recommended_action": recommended_action,
         }
     )
     return True

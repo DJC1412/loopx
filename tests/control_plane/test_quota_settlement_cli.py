@@ -12,6 +12,9 @@ from urllib.parse import quote
 import pytest
 
 from loopx.bootstrap_command_pack import build_start_goal_guided_packet
+from loopx.cli_commands.quota import (
+    _apply_requested_quota_action_selection_preflight,
+)
 from loopx.control_plane.work_items.delivery_outcome import (
     PROGRESS_DELIVERY_OUTCOMES,
     DeliveryOutcome,
@@ -5583,3 +5586,95 @@ def test_legacy_read_only_workspace_mismatch_fails_then_corrects_from_todo_contr
         receipt["step_kind"] for receipt in replay["settlement_result"]["receipts"]
     ] == ["validation", "durable_writeback", "quota_spend"]
     assert _spend_run_count(runtime) == 1
+
+
+def _deferred_selection_payload(
+    *,
+    reason: str,
+    preemptions: list[str],
+    workspace_repair: bool,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "ok": True,
+        "decision": "run",
+        "should_run": True,
+        # A deferred selection is by definition one delivery may not honor yet;
+        # the two deferrals differ only in which repair the turn owes first.
+        "normal_delivery_allowed": False,
+        "workspace_repair_allowed": workspace_repair,
+        "selected_todo": {
+            "schema_version": "quota_selected_todo_v0",
+            "todo_id": ALTERNATIVE_TODO_ID,
+            "selection_binding": "pending_action_selection",
+        },
+        "action_selection_qualification": {
+            "schema_version": "action_selection_qualification_v0",
+            "state": "deferred",
+            "requested_todo_id": ALTERNATIVE_TODO_ID,
+            "reason": reason,
+            "delivery_preemptions": preemptions,
+        },
+    }
+    if workspace_repair:
+        payload["execution_obligation"] = {
+            "kind": "agent_workspace_repair",
+            "must_attempt_work": True,
+            "delivery_allowed": False,
+            "minimum": "one_workspace_move_then_guard_rerun",
+            "contract": (
+                "do not edit repository files from a shared checkout; create or "
+                "switch to an independent worktree/branch, then rerun quota "
+                "should-run with the same agent id"
+            ),
+        }
+    return payload
+
+
+def test_workspace_repair_deferral_names_the_workspace_move() -> None:
+    """The one deferral an agent can act on must not read as a frontier verdict.
+
+    Selecting from the shared checkout returns
+    ``state=quota_action_selection_deferred`` with ``reason=control_repair``.
+    Read literally that points at an unrelated control-plane preemption, and an
+    agent can burn several turns re-reading the portfolio before noticing that
+    the payload's ``execution_obligation.kind`` is ``agent_workspace_repair``
+    and the only required move is to select from a worktree. The message now
+    says so.
+    """
+
+    payload = _deferred_selection_payload(
+        reason="control_repair",
+        preemptions=["control_repair", "delivery_not_allowed"],
+        workspace_repair=True,
+    )
+    applied = _apply_requested_quota_action_selection_preflight(
+        payload,
+        requested_todo_id=ALTERNATIVE_TODO_ID,
+        receipt_bound_todo_id=None,
+        receipt_bound_replan_obligation_id=None,
+    )
+
+    assert applied is True
+    assert "move the workspace first" in payload["reason"]
+    assert "shared checkout" in payload["reason"]
+    assert "independent worktree or branch" in payload["recommended_action"]
+    assert "--turn-instance-id" in payload["recommended_action"]
+    assert "delivery frontier" not in payload["reason"]
+
+
+def test_unrelated_deferral_keeps_the_frontier_wording() -> None:
+    payload = _deferred_selection_payload(
+        reason="autonomous_replan",
+        preemptions=["autonomous_replan", "delivery_not_allowed"],
+        workspace_repair=False,
+    )
+    applied = _apply_requested_quota_action_selection_preflight(
+        payload,
+        requested_todo_id=ALTERNATIVE_TODO_ID,
+        receipt_bound_todo_id=None,
+        receipt_bound_replan_obligation_id=None,
+    )
+
+    assert applied is True
+    assert "delivery frontier: autonomous_replan" in payload["reason"]
+    assert "handle the current delivery preemption" in payload["recommended_action"]
