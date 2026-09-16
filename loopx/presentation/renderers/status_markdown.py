@@ -134,28 +134,23 @@ def append_global_registry_summary_markdown(
 def append_runtime_projection_routes_markdown(
     lines: list[str],
     diagnostics: dict[str, Any],
-    *,
-    registry: Any = None,
-    goal_id: Any = None,
 ) -> None:
-    """Render the flag with the registry and route count it was computed over.
+    """Render the flag beside the route count it was computed over.
 
     `doctor` derives the same `healthy` key from the shared global registry, so
-    a bare boolean here can read as a contradiction. The scope is what makes the
-    two surfaces comparable.
+    a bare boolean here can read as a contradiction. The denominator is the one
+    fact that explains it: `goals=1` is a single scoped goal, `goals=44` is the
+    fleet. The registry itself stays out of this line because the agent-facing
+    output budget allows only 32 extra characters per row, and `doctor` already
+    names the registry and the full counts map for the unhealthy reading.
     """
     healthy = diagnostics.get("healthy")
     if healthy is None:
         return
-    scope: list[str] = []
-    if registry:
-        scope.append(f"registry={registry}")
-    if goal_id:
-        scope.append(f"goal={goal_id}")
     route_goal_count = diagnostics.get("goal_count")
-    if isinstance(route_goal_count, int):
-        scope.append(f"goals={route_goal_count}")
-    scope_text = f" ({', '.join(scope)})" if scope else ""
+    scope_text = (
+        f" (goals={route_goal_count})" if isinstance(route_goal_count, int) else ""
+    )
     suffix = "" if healthy else ", details=loopx doctor"
     lines.append(f"- runtime_projection_routes: healthy={healthy}{scope_text}{suffix}")
 
@@ -968,12 +963,7 @@ def render_status_markdown(
         if isinstance(payload.get("runtime_projection_routes"), dict)
         else {}
     )
-    append_runtime_projection_routes_markdown(
-        lines,
-        runtime_projection_routes,
-        registry=payload.get("registry"),
-        goal_id=payload.get("goal_filter"),
-    )
+    append_runtime_projection_routes_markdown(lines, runtime_projection_routes)
 
     event_ledger = (
         payload.get("event_ledger_summary")
