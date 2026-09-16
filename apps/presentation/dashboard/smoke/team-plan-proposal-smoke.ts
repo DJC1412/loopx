@@ -70,6 +70,17 @@ const plan = {
       agent_id: "agent-backend",
       acceptance: "the bounded Todo is created through the canonical owner",
       staffing: "ready",
+      readiness: {
+        schema_version: "steward_lane_readiness_ladder_v0",
+        launchable: false,
+        verified_rungs: ["registered", "action_kind_supported"],
+        unverified_rungs: [
+          { rung: "addressable", reason_code: "host_has_no_agent_presence_provider" },
+          { rung: "bound", reason_code: "host_has_no_runtime_binding_readback" },
+          { rung: "launchable", reason_code: "host_has_no_launch_probe" },
+          { rung: "executing", reason_code: "lane_not_materialized_by_a_preview" },
+        ],
+      },
       first_todo: {
         text: "Implement the bounded intake",
         priority: "P1",
@@ -132,6 +143,7 @@ const translate = (key: string, values?: Record<string, string | number>) => {
     "proposal.teamPlan.acceptanceShort": "acceptance",
     "proposal.teamPlan.gapLane": "unstaffed",
     "proposal.teamPlan.laneUnstaffed": "staffing gap, no first Todo",
+    "proposal.teamPlan.laneReadiness": "not launchable — verified: {verified}; unverified: {unverified}",
   };
   const template = table[key] ?? key;
   return Object.entries(values ?? {}).reduce(
@@ -151,6 +163,12 @@ check(
   && readyLane?.value.includes("Implement the bounded intake") === true
   && readyLane?.value.includes("acceptance: the bounded Todo is created through the canonical owner") === true,
   "a ready lane shows its first bounded Todo, its priority and its acceptance signal",
+);
+check(
+  readyLane?.value.includes("not launchable") === true
+  && readyLane?.value.includes("verified: registered, action_kind_supported") === true
+  && readyLane?.value.includes("unverified: addressable, bound, launchable, executing") === true,
+  "a staffed lane states which rungs this host verified and which it cannot",
 );
 check(
   gapLane?.value.startsWith("unstaffed · agent_not_registered") === true

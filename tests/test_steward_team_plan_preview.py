@@ -58,6 +58,43 @@ def test_a_staffed_lane_becomes_a_preview_that_cannot_apply() -> None:
     assert preview["quota_envelope"] == {"slots_per_day": 4}
 
 
+def test_a_staffed_lane_reports_which_rungs_the_host_verified() -> None:
+    """`ready` is not `launchable`, and the preview has to say which is which.
+
+    The card read "ready" next to an Agent and a first Todo, which an owner can
+    read as work an executor will pick up. This host verifies exactly two rungs
+    — the Goal registers the Agent, and the host ships the action kind — and has
+    no provider for addressability, runtime binding, launch or execution. The
+    ladder states both halves so the weaker claim cannot be read as the
+    stronger one.
+    """
+
+    readiness = _validate(_plan())["lanes"][0]["readiness"]
+
+    assert readiness["schema_version"] == "steward_lane_readiness_ladder_v0"
+    assert readiness["launchable"] is False
+    assert readiness["verified_rungs"] == ["registered", "action_kind_supported"]
+    assert readiness["unverified_rungs"] == [
+        {"rung": "addressable", "reason_code": "host_has_no_agent_presence_provider"},
+        {"rung": "bound", "reason_code": "host_has_no_runtime_binding_readback"},
+        {"rung": "launchable", "reason_code": "host_has_no_launch_probe"},
+        {"rung": "executing", "reason_code": "lane_not_materialized_by_a_preview"},
+    ]
+
+
+def test_a_gap_lane_carries_no_readiness_ladder() -> None:
+    """A lane the host could not staff has no rungs to report."""
+
+    lane = {
+        **_lane(lane_id="lane-beta", action_kind="implement"),
+        "agent_id": "agent-not-registered",
+    }
+    gap_lane = _validate(_plan(lanes=[lane]))["lanes"][0]
+
+    assert gap_lane["staffing"] == "gap"
+    assert "readiness" not in gap_lane
+
+
 def test_the_preview_must_name_the_goal_it_staffs() -> None:
     """Admission and settlement both need one named Goal's facts."""
 

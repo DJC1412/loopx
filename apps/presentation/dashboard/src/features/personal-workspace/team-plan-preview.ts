@@ -21,6 +21,29 @@ function asText(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+/**
+ * State the lane's readiness from the host's ladder instead of leaving the
+ * card's "ready" to imply a running lane. Only the two rungs this host verified
+ * are claimed; the rest are named as unverified.
+ */
+function teamPlanLaneReadiness(
+  lane: Record<string, unknown>,
+  t: WorkspaceTranslate,
+): string {
+  const readiness = asRecord(lane.readiness);
+  if (readiness.launchable === true) return "";
+  const verified = (Array.isArray(readiness.verified_rungs) ? readiness.verified_rungs : [])
+    .filter((rung): rung is string => typeof rung === "string");
+  const unverified = (Array.isArray(readiness.unverified_rungs) ? readiness.unverified_rungs : [])
+    .map((rawRung) => asText(asRecord(rawRung).rung))
+    .filter(Boolean);
+  if (!verified.length && !unverified.length) return "";
+  return t("proposal.teamPlan.laneReadiness", {
+    unverified: unverified.join(", "),
+    verified: verified.join(", "),
+  });
+}
+
 export function teamPlanFields(
   parameters: Record<string, unknown>,
   t: WorkspaceTranslate,
@@ -67,6 +90,7 @@ export function teamPlanFields(
       value: [
         laneValue || t("proposal.teamPlan.laneUnstaffed"),
         acceptance ? `${t("proposal.teamPlan.acceptanceShort")}: ${acceptance}` : "",
+        teamPlanLaneReadiness(lane, t),
       ].filter(Boolean).join(" · "),
     });
   });

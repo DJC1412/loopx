@@ -38,6 +38,17 @@ function teamPlanProposal() {
             agent_id: "agent-backend",
             acceptance: "the bounded Todo is created through the canonical owner",
             staffing: "ready",
+            readiness: {
+              schema_version: "steward_lane_readiness_ladder_v0",
+              launchable: false,
+              verified_rungs: ["registered", "action_kind_supported"],
+              unverified_rungs: [
+                { rung: "addressable", reason_code: "host_has_no_agent_presence_provider" },
+                { rung: "bound", reason_code: "host_has_no_runtime_binding_readback" },
+                { rung: "launchable", reason_code: "host_has_no_launch_probe" },
+                { rung: "executing", reason_code: "lane_not_materialized_by_a_preview" },
+              ],
+            },
             first_todo: {
               text: READY_TODO,
               priority: "P1",
@@ -169,6 +180,12 @@ export const teamPlanScenario = {
       check(
         previewText.includes("验收: the bounded Todo is created through the canonical owner"),
         "a ready lane shows its acceptance signal",
+      );
+      check(
+        previewText.includes("尚未就绪")
+        && previewText.includes("已验证：registered, action_kind_supported")
+        && previewText.includes("未验证：addressable, bound, launchable, executing"),
+        "a staffed lane states which readiness rungs this host verified and which it cannot",
       );
       check(
         previewText.includes("agent-reviewer")

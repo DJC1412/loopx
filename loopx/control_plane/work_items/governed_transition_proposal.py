@@ -700,6 +700,39 @@ STEWARD_TEAM_PLAN_GAP_REASONS = (
 STEWARD_TEAM_PLAN_UNSUPPORTED_ACTION_KIND = "action_kind_not_supported"
 STEWARD_TEAM_PLAN_HOST_GAP_REASONS = (STEWARD_TEAM_PLAN_UNSUPPORTED_ACTION_KIND,)
 
+# A staffed lane is not a running lane. `staffing: "ready"` only ever meant that
+# this Goal registers the Agent and this host ships the action kind, but a plan
+# card that says "ready" implies work an executor will pick up. The ladder names
+# each rung separately so a reader can see which ones this host actually
+# verified and which ones it has no provider for.
+STEWARD_LANE_READINESS_SCHEMA_VERSION = "steward_lane_readiness_ladder_v0"
+STEWARD_LANE_READINESS_VERIFIED_RUNGS = ("registered", "action_kind_supported")
+# The rungs this host cannot answer today. `agents/directory.py` has no presence
+# provider and this host has no tool-eligibility probe or execution-capacity
+# reading, so claiming them would be a guess dressed as a fact.
+STEWARD_LANE_READINESS_UNPROVIDED_RUNGS = (
+    ("addressable", "host_has_no_agent_presence_provider"),
+    ("bound", "host_has_no_runtime_binding_readback"),
+    ("launchable", "host_has_no_launch_probe"),
+    ("executing", "lane_not_materialized_by_a_preview"),
+)
+
+
+def _staffed_lane_readiness() -> dict[str, object]:
+    """Report the two rungs this host checked and the ones it cannot check."""
+
+    return {
+        "schema_version": STEWARD_LANE_READINESS_SCHEMA_VERSION,
+        # A lane may only be called launchable once every rung up to and
+        # including `launchable` is verified; none of them are today.
+        "launchable": False,
+        "verified_rungs": list(STEWARD_LANE_READINESS_VERIFIED_RUNGS),
+        "unverified_rungs": [
+            {"rung": rung, "reason_code": reason_code}
+            for rung, reason_code in STEWARD_LANE_READINESS_UNPROVIDED_RUNGS
+        ],
+    }
+
 
 def _plan_text(value: object, label: str) -> str:
     text = " ".join(str(value or "").split())
@@ -927,6 +960,10 @@ def validate_steward_team_plan_preview(
                 "agent_id": agent_id,
                 "acceptance": acceptance,
                 "staffing": "ready",
+                # `staffing: "ready"` stays the plan's own vocabulary; this is
+                # the host's reading of what it verified, so the two can be read
+                # together without either one implying the lane is running.
+                "readiness": _staffed_lane_readiness(),
                 "first_todo": normalized_todo,
             }
         )
