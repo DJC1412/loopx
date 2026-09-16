@@ -296,6 +296,16 @@ def test_an_admitted_preview_becomes_the_card_the_surfaces_list(
     # success for a plan the host could only partly staff.
     assert receipt["outcome"] == "team_plan_partially_applied"
     assert receipt["gap_count"] == 1
+    # The count alone cannot be acted on, so the readback also names the lane
+    # that stayed unstaffed, the Agent it was meant to run on, and the host
+    # fact that stopped it.
+    assert receipt["gap_lanes"] == [
+        {
+            "lane_id": "lane-beta",
+            "agent_id": AGENT_ID,
+            "reason_code": "action_kind_not_supported",
+        }
+    ]
     # Confirming the card creates the lane that can run and not the one whose
     # kind this host does not ship.
     assert len(receipt["resource_ids"]["lane_todo_ids"]) == 1

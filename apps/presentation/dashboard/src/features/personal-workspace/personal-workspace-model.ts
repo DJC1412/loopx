@@ -232,6 +232,10 @@ export type WorkspaceActionPreview = {
   primaryLabel?: string;
   errorMessage?: string;
   status: "draft" | "ready" | "applying" | "applied" | "gated" | "stale" | "error" | "rejected" | "deferred";
+  // The lanes a confirmed team plan left unstaffed, read from the apply
+  // receipt so the card can name them after the confirmation, not only in the
+  // preview that the confirmation replaced.
+  teamPlanGapLanes?: Array<{ laneId: string; agentId: string; reasonCode: string }>;
   title: string;
   sourceRequest?: WorkspaceActionPreviewRequest;
   workspaceCandidates?: Array<{ label: string; workspaceRef: string }>;

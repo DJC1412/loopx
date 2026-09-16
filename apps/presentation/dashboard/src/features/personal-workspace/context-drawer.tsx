@@ -40,6 +40,7 @@ import type {
 import type { LarkGoalConnection } from "../../data/chat";
 import { localizedAttentionAge, localizedGoalState, localizedSessionStatus, useWorkspaceI18n } from "./i18n";
 import { formatCostUsd, formatDurationMs, formatTokenCount, formatUsageValue } from "./personal-workspace-model";
+import { teamPlanGapLaneLine } from "./team-plan-preview";
 import { todoResumeWhenFromMessage } from "./personal-workspace-router";
 
 function subagentModelRequest(include: boolean, model: string, effort: string) {
@@ -972,6 +973,7 @@ export function ContextDrawer({ agents, attentionHistory = [], onSelectAttention
               <dl>{selection.item.fields.map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{field.value}</dd></div>)}</dl>
             </section>
             {selection.item.status === "applied" ? <p className={`personal-proposal-state ${selection.item.actionKind === "operation.execute" && selection.item.reviewPlan?.reason === "readback_unverified" ? "is-gated" : "is-applied"}`}><Check size={16} />{selection.item.actionKind === "operation.execute" ? selection.item.primaryLabel : t("drawer.proposalApplied")}</p> : null}
+            {selection.item.status === "applied" && selection.item.actionKind === "team.plan" && (selection.item.teamPlanGapLanes?.length ?? 0) > 0 ? <div className="personal-proposal-state is-gated"><span><strong>{t("drawer.proposalAppliedUnstaffed", { count: selection.item.teamPlanGapLanes!.length })}</strong><ul className="personal-proposal-explainer">{selection.item.teamPlanGapLanes!.map((gap) => <li key={gap.laneId}>{teamPlanGapLaneLine(gap, t)}</li>)}</ul></span></div> : null}
             {selection.item.status === "applied" && selection.item.actionKind !== "operation.execute" && selection.item.goalId ? <button className="personal-primary-action" onClick={() => { const goalId = selection.item.goalId!; onClose(); void callbacks.onOpenGoal?.(goalId); }} type="button"><ExternalLink size={16} />{selection.item.actionKind === "goal.create" ? t("drawer.proposalEnterGoal") : t("drawer.proposalViewGoal")}</button> : null}
             {selection.item.status === "stale" ? <p className="personal-proposal-state is-stale">{t("drawer.proposalStale")}</p> : null}
             {selection.item.status === "error" ? <div className="personal-proposal-state is-error"><span>{selection.item.reviewPlan?.reason === "readback_unverified" ? t("actionReview.readback_unverified") : t("drawer.proposalApplyFailed")}</span>{selection.item.errorMessage ? <small>{selection.item.errorMessage}</small> : null}<small>{t("drawer.proposalApplyFailedHint")}</small></div> : null}

@@ -52,6 +52,7 @@ _OPTIONAL_RECEIPT_FIELDS = {
     "intent_basis",
     "lane_settlements",
     "gap_count",
+    "gap_lanes",
 }
 _LANE_TODO_ID_LIMIT = 8
 _LANE_TODO_ID = re.compile(r"^todo_[A-Za-z0-9]{1,40}$")
@@ -65,6 +66,10 @@ _LANE_SETTLEMENT_FIELDS = {
     "acceptance",
 }
 _LANE_SETTLEMENT_DISPOSITIONS = ("created", "reused")
+# A lane the settlement could not staff is the same lane relationship with a
+# staffability reason instead of a Todo, so it carries the lane, the Agent that
+# was meant to run it, and why it stayed unstaffed.
+_GAP_LANE_FIELDS = {"lane_id", "agent_id", "reason_code"}
 
 
 TransitionCheckpoint = Callable[[list[dict[str, Any]]], None]
@@ -188,6 +193,16 @@ def validate_governed_transition_receipts(
             or not 1 <= gap_count <= STEWARD_TEAM_PLAN_LANE_LIMIT
         ):
             raise ValueError("governed transition proposal receipt gap_count is invalid")
+        gap_lanes = receipt.get("gap_lanes")
+        if gap_lanes is not None:
+            # Which lanes are still missing, and why, is the readback a partial
+            # application needs: the count alone cannot be acted on, and the
+            # lanes the settlement *did* ensure are already named above.
+            normalize_gap_lanes(gap_lanes)
+            if not gap_count:
+                raise ValueError(
+                    "governed transition proposal receipt gap_lanes requires gap_count"
+                )
         validate_public_safe_value(receipt, path=f"transition_receipts[{index}]")
         receipts.append(receipt)
     return receipts
@@ -245,6 +260,44 @@ def normalize_lane_settlements(value: object) -> list[dict[str, str]]:
         )
     validate_public_safe_value(settlements, path="lane_settlements")
     return settlements
+
+
+def normalize_gap_lanes(value: object) -> list[dict[str, str]]:
+    """Read which lanes a confirmed plan left unstaffed, and why.
+
+    A partial application keeps the lanes it created beside the lanes it could
+    not create. The count says how many are missing; this names them, with the
+    host fact that stopped each one, so the owner can act on the gap (register
+    the Agent, or ask for a kind this host ships) instead of reading a number.
+    """
+
+    if (
+        not isinstance(value, list)
+        or not 1 <= len(value) <= STEWARD_TEAM_PLAN_LANE_LIMIT
+    ):
+        raise ValueError("governed transition gap lanes are invalid")
+    gaps: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(value):
+        item = _mapping(raw, f"gap_lane[{index}]")
+        if set(item) != _GAP_LANE_FIELDS:
+            raise ValueError("governed transition gap lane fields are invalid")
+        lane_id = str(item["lane_id"])
+        if not lane_id or lane_id in seen:
+            raise ValueError("governed transition gap lane identity is invalid")
+        seen.add(lane_id)
+        reason_code = str(item["reason_code"])
+        if reason_code not in _GAP_LANE_REASONS:
+            raise ValueError("governed transition gap lane reason_code is invalid")
+        gaps.append(
+            {
+                "lane_id": lane_id,
+                "agent_id": _plan_text(item["agent_id"], "gap lane agent_id"),
+                "reason_code": reason_code,
+            }
+        )
+    validate_public_safe_value(gaps, path="gap_lanes")
+    return gaps
 
 
 def _monitor_for_key(
@@ -531,7 +584,27 @@ def _apply_team_plan(
         "intent_basis": intent_basis,
         "reused_lane_count": len(reused),
         "gap_count": len(preview["gaps"]),
+        # The count says how many lanes are missing; naming them (and the host
+        # fact behind each one) is what a reader can act on.
+        "gap_lanes": _gap_lane_records(preview),
     }
+
+
+def _gap_lane_records(preview: Mapping[str, Any]) -> list[dict[str, str]]:
+    """Name each unstaffed lane with the Agent it was meant to run on."""
+
+    agents = {
+        str(lane.get("lane_id") or ""): str(lane.get("agent_id") or "")
+        for lane in preview["lanes"]
+    }
+    return [
+        {
+            "lane_id": str(gap.get("lane_id") or ""),
+            "agent_id": agents.get(str(gap.get("lane_id") or ""), ""),
+            "reason_code": str(gap.get("reason_code") or ""),
+        }
+        for gap in preview["gaps"]
+    ]
 
 
 def _complete_monitor(
@@ -671,6 +744,13 @@ def settle_governed_transition_proposals(
             # partial application, and the reader has to be able to tell
             # without re-deriving the plan.
             receipt["gap_count"] = int(gap_count)
+        gap_lanes = result.get("gap_lanes")
+        if gap_lanes:
+            # Which lanes are missing, and the host fact that stopped each one,
+            # so the owner reads the gap itself and not only its size.
+            receipt["gap_lanes"] = normalize_gap_lanes(
+                [dict(item) for item in gap_lanes]
+            )
         if result.get("intent_basis"):
             # The work-graph edit this receipt records is traceable to the
             # canonical basis it was applied against, so a lane Todo can be tied
@@ -699,6 +779,14 @@ STEWARD_TEAM_PLAN_GAP_REASONS = (
 # reader can tell an owner-declared gap from a staffability verdict Core made.
 STEWARD_TEAM_PLAN_UNSUPPORTED_ACTION_KIND = "action_kind_not_supported"
 STEWARD_TEAM_PLAN_HOST_GAP_REASONS = (STEWARD_TEAM_PLAN_UNSUPPORTED_ACTION_KIND,)
+# The two facts that make one lane unstaffable here, read back by a receipt:
+# the Goal does not register the lane's Agent, or this host does not ship the
+# action kind it asked for.
+STEWARD_TEAM_PLAN_AGENT_NOT_REGISTERED = "agent_not_registered"
+_GAP_LANE_REASONS = (
+    STEWARD_TEAM_PLAN_AGENT_NOT_REGISTERED,
+    STEWARD_TEAM_PLAN_UNSUPPORTED_ACTION_KIND,
+)
 
 
 def _plan_text(value: object, label: str) -> str:
@@ -904,7 +992,7 @@ def validate_steward_team_plan_preview(
         # Before this, an unsupported kind raised, so Chat admission dropped the
         # whole plan and the owner saw correct prose with nothing to confirm.
         if agent_id not in registered:
-            lane_gap_reason = "agent_not_registered"
+            lane_gap_reason = STEWARD_TEAM_PLAN_AGENT_NOT_REGISTERED
         elif action_kind not in action_kinds:
             lane_gap_reason = STEWARD_TEAM_PLAN_UNSUPPORTED_ACTION_KIND
         else:

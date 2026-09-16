@@ -324,6 +324,77 @@ def test_the_lane_readback_is_optional_bounded_and_additive() -> None:
         validate_governed_transition_receipts([_receipt(monitor_key=None)])
 
 
+def test_the_receipt_names_the_lanes_a_partial_plan_left_unstaffed() -> None:
+    """A count says how many are missing; the readback has to name them."""
+
+    gap_lanes = [
+        {
+            "lane_id": "lane-beta",
+            "agent_id": "codex-side-bypass",
+            "reason_code": "action_kind_not_supported",
+        },
+        {
+            "lane_id": "lane-gamma",
+            "agent_id": "codex-quality",
+            "reason_code": "agent_not_registered",
+        },
+    ]
+    assert len(
+        validate_governed_transition_receipts(
+            [
+                _receipt(
+                    kind="steward_team_plan_preview",
+                    monitor_key=None,
+                    gap_count=2,
+                    gap_lanes=gap_lanes,
+                )
+            ]
+        )
+    ) == 1
+    # The count is what the gap lanes are counted against, so naming the lanes
+    # without it would leave two readers disagreeing about the same receipt.
+    with pytest.raises(ValueError, match="gap_lanes requires gap_count"):
+        validate_governed_transition_receipts(
+            [
+                _receipt(
+                    kind="steward_team_plan_preview",
+                    monitor_key=None,
+                    gap_lanes=gap_lanes,
+                )
+            ]
+        )
+    for invalid_gap_lanes in (
+        [],
+        gap_lanes * 5,
+        [{"lane_id": "lane-beta", "agent_id": "a", "reason_code": "guessed"}],
+        [{"lane_id": "lane-beta", "agent_id": "a"}],
+        [{"lane_id": "", "agent_id": "a", "reason_code": "agent_not_registered"}],
+        [
+            {
+                "lane_id": "lane-beta",
+                "agent_id": "a",
+                "reason_code": "agent_not_registered",
+            },
+            {
+                "lane_id": "lane-beta",
+                "agent_id": "b",
+                "reason_code": "agent_not_registered",
+            },
+        ],
+    ):
+        with pytest.raises(ValueError, match="gap lane"):
+            validate_governed_transition_receipts(
+                [
+                    _receipt(
+                        kind="steward_team_plan_preview",
+                        monitor_key=None,
+                        gap_count=1,
+                        gap_lanes=invalid_gap_lanes,
+                    )
+                ]
+            )
+
+
 def test_the_receipt_records_the_intent_basis_it_was_applied_against(
     tmp_path: Path,
 ) -> None:

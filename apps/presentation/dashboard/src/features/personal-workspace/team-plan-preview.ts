@@ -113,3 +113,56 @@ export function teamPlanGoalId(parameters: Record<string, unknown>): string {
   const plan = asRecord(parameters.plan);
   return asText(parameters.goal_id) || asText(plan.goal_id);
 }
+
+export type TeamPlanGapLane = { laneId: string; agentId: string; reasonCode: string };
+
+/**
+ * Read the lanes a confirmed plan left unstaffed out of the apply receipt.
+ *
+ * The applied state reported only how many lanes were missing, which an owner
+ * cannot act on: a count does not say which lane is still waiting or what would
+ * let it run. The receipt names each missing lane with the host fact behind it,
+ * so the card that confirmed the plan can say both. A receipt without the field
+ * (an older runtime, or a plan that staffed every lane) reports no gap lanes.
+ */
+export function teamPlanReceiptGapLanes(receipt: unknown): TeamPlanGapLane[] {
+  const record = asRecord(receipt);
+  const raw = Array.isArray(record.gap_lanes) ? record.gap_lanes : [];
+  return raw
+    .map((entry) => {
+      const gap = asRecord(entry);
+      return {
+        laneId: asText(gap.lane_id),
+        agentId: asText(gap.agent_id),
+        reasonCode: asText(gap.reason_code),
+      };
+    })
+    .filter((gap) => gap.laneId.length > 0);
+}
+
+/** The host fact that kept one lane unstaffed, in the reader's language. */
+export function teamPlanGapReason(
+  reasonCode: string,
+  t: WorkspaceTranslate,
+): string {
+  if (reasonCode === "agent_not_registered") {
+    return t("proposal.teamPlan.gapReason.agentNotRegistered");
+  }
+  if (reasonCode === "action_kind_not_supported") {
+    return t("proposal.teamPlan.gapReason.actionKindNotSupported");
+  }
+  // An unrecognized code is a host fact this card has no words for. Naming it
+  // verbatim is honest; inventing a reason for it would not be.
+  return reasonCode;
+}
+
+export function teamPlanGapLaneLine(
+  gap: TeamPlanGapLane,
+  t: WorkspaceTranslate,
+): string {
+  return t("proposal.teamPlan.appliedGapLane", {
+    lane: gap.laneId,
+    agent: gap.agentId || gap.laneId,
+    reason: teamPlanGapReason(gap.reasonCode, t),
+  });
+}
