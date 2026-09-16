@@ -21,6 +21,11 @@ from ..control_plane.agents.capability_gate import (
     runtime_capabilities_for_cli_projection,
 )
 from ..control_plane.capability_hooks import PostWritebackHookRegistration
+from ..control_plane.goals.goal_vision import (
+    GOAL_PATH_DELTA_SCHEMA_VERSION,
+    GOAL_VISION_PATH_DELTA_FIELD,
+    misplaced_goal_path_delta_field,
+)
 from ..control_plane.goals.goal_vision_policy import (
     GOAL_VISION_ADVANCEMENT_POLICY_CHOICES,
 )
@@ -384,6 +389,16 @@ def handle_refresh_state_command(
             agent_vision_packet = json.loads(
                 Path(args.agent_vision_json).expanduser().read_text(encoding="utf-8")
             )
+            misplaced_path_delta = misplaced_goal_path_delta_field(agent_vision_packet)
+            if misplaced_path_delta:
+                foreign_field, _schema_version = misplaced_path_delta
+                raise ValueError(
+                    f"agent vision packet nests {GOAL_PATH_DELTA_SCHEMA_VERSION} under "
+                    f"{foreign_field!r}, so the write path would drop it. Nest the path "
+                    f"delta under {GOAL_VISION_PATH_DELTA_FIELD!r} in the same packet, "
+                    f'e.g. {{"{GOAL_VISION_PATH_DELTA_FIELD}": '
+                    f'{{"schema_version": "{GOAL_PATH_DELTA_SCHEMA_VERSION}", ...}}}}.'
+                )
         elif inline_vision_packet:
             agent_vision_packet = inline_vision_packet
             merge_agent_vision_patch = True

@@ -1283,7 +1283,25 @@ Post-turn accounting protocol:
   `refresh-state` must run from a separate registry checkout, pass
   `--delivery-workspace-path <delivery-worktree>`; the path is validated locally
   and omitted from persisted history. Do not point this option at the canonical
-  checkout for peer work.
+  checkout for peer work. In a guarded peer lane the two halves of one
+  writeback therefore run from different checkouts, because the delivery
+  worktree carries no project registry state and the spend guard reads the
+  current workspace:
+
+  ```sh
+  # 1. from the canonical checkout, attributing the work to the delivery worktree
+  loopx refresh-state --goal-id <goal-id> --agent-id <agent-id> \
+    --delivery-workspace-path <delivery-worktree> ...
+
+  # 2. from the delivery worktree itself
+  cd <delivery-worktree>
+  loopx quota spend-slot --goal-id <goal-id> --agent-id <agent-id> ... --execute
+  ```
+
+  `refresh-state` run inside the worktree has no active state to refresh, and a
+  spend run from the canonical checkout is refused with
+  `return_to_delivery_worktree`. Moving between the two checkouts is the
+  documented flow, not a workaround.
 - delivery attribution is not synonymous with Git. A registered single-agent
   goal whose project has no Git origin records a path-free `local_goal`
   workspace identity (`loopx:<goal-id>`) when refresh runs inside that

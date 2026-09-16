@@ -16,6 +16,7 @@ from loopx.control_plane.goals.goal_frontier import (  # noqa: E402
 )
 from loopx.control_plane.goals.goal_vision import (  # noqa: E402
     compact_goal_vision_packet,
+    misplaced_goal_path_delta_field,
     normalize_goal_vision_packet,
 )
 from loopx.control_plane.runtime.shared_runtime_refresh_projection import (  # noqa: E402
@@ -114,6 +115,34 @@ def main() -> int:
         assert "path_delta.retained has 4 items; limit is 3" in str(exc), exc
     else:
         raise AssertionError("over-item path delta should fail")
+
+    # The delta is nested under `path_delta`; `goal_path_delta_v0` is only its
+    # schema_version. A packet that nests it under the schema name would drop
+    # the delta silently, so the write path has to name the accepted key.
+    assert misplaced_goal_path_delta_field(packet()) is None
+    assert misplaced_goal_path_delta_field({"path_delta": {"outcome": "wait"}}) is None
+    assert misplaced_goal_path_delta_field("not-a-packet") is None
+    misfiled = dict(packet())
+    misfiled["goal_path_delta_v0"] = misfiled.pop("path_delta")
+    assert misplaced_goal_path_delta_field(misfiled) == (
+        "goal_path_delta_v0",
+        "goal_path_delta_v0",
+    ), misfiled
+    # A read-path compaction of the misfiled packet loses the delta, which is
+    # exactly the silent drop the write-path guard exists to prevent.
+    misfiled_compact = compact_goal_vision_packet(misfiled)
+    assert "path_delta" not in (misfiled_compact or {}), misfiled_compact
+    # Placing both keys is not a misfiling: the read path still finds the delta.
+    both_keys = dict(packet())
+    both_keys["goal_path_delta_v0"] = {"schema_version": "goal_path_delta_v0"}
+    assert misplaced_goal_path_delta_field(both_keys) is None
+    # One shared key is not enough to call an unrelated object a path delta.
+    assert (
+        misplaced_goal_path_delta_field({"telemetry": {"outcome": "ok"}}) is None
+    )
+    assert misplaced_goal_path_delta_field(
+        {"telemetry": {"outcome": "ok", "evidence_refs": ["evidence:x"]}}
+    ) == ("telemetry", "goal_path_delta_v0")
 
     print("goal-vision-path-delta-smoke ok")
     return 0

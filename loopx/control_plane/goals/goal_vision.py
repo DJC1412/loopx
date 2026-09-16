@@ -11,6 +11,8 @@ from .vision_checkpoint import (
 
 GOAL_VISION_REPLAN_SCHEMA_VERSION = "goal_vision_replan_contract_v0"
 GOAL_PATH_DELTA_SCHEMA_VERSION = "goal_path_delta_v0"
+# The goal-vision packet field that carries the `goal_path_delta_v0` object.
+GOAL_VISION_PATH_DELTA_FIELD = "path_delta"
 
 
 GOAL_VISION_FIELD_LIMITS: dict[str, int] = {
@@ -112,6 +114,48 @@ def _compact_fallback_declarations(value: Any) -> list[dict[str, str]]:
                 entry[field] = text
         declarations.append(entry)
     return declarations
+
+
+def misplaced_goal_path_delta_field(value: Any) -> tuple[str, str] | None:
+    """Return the foreign key holding a `goal_path_delta_v0` object, if any.
+
+    The path delta is an optional *nested* object of the goal-vision packet, and
+    the read path only looks under ``path_delta``. A caller that nests it under
+    the delta's own schema name loses it silently, and the autonomous replan
+    writeback then rejects the turn with a message that never names the field.
+    The write path calls this before accepting a packet so that mismatch fails
+    with the accepted key instead of a generic "no accepted surface" refusal.
+
+    A foreign key counts as a misfiled delta when its value is either labelled
+    with the delta's schema version or carries at least two of the delta's own
+    field names. Requiring two fields keeps an unrelated object that happens to
+    have one shared key from being reported as a path delta.
+    """
+
+    if not isinstance(value, dict):
+        return None
+    if isinstance(value.get(GOAL_VISION_PATH_DELTA_FIELD), dict):
+        return None
+    for field, candidate in value.items():
+        if field == GOAL_VISION_PATH_DELTA_FIELD:
+            continue
+        if not isinstance(candidate, dict):
+            continue
+        if _looks_like_goal_path_delta(candidate):
+            return str(field), GOAL_PATH_DELTA_SCHEMA_VERSION
+    return None
+
+
+def _looks_like_goal_path_delta(candidate: dict[str, Any]) -> bool:
+    if str(candidate.get("schema_version") or "") == GOAL_PATH_DELTA_SCHEMA_VERSION:
+        return True
+    # `outcome` lives beside the two limit maps rather than inside them.
+    delta_fields = (
+        {"outcome"}
+        | set(GOAL_PATH_DELTA_SCALAR_LIMITS)
+        | set(GOAL_PATH_DELTA_LIST_LIMITS)
+    )
+    return len(delta_fields.intersection(candidate)) >= 2
 
 
 def compact_goal_vision_packet(value: Any) -> dict[str, Any] | None:

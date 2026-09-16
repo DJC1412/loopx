@@ -107,24 +107,33 @@ other's active vision.
 
 ### Path Delta
 
-A machine-generated vision packet may include one optional
-`goal_path_delta_v0`. It makes a bounded loop's look-back explicit without
-adding more inline CLI flags or expanding the heartbeat prompt. The packet is
-written through the existing `--agent-vision-json` boundary and is retained in
-the same agent-scoped run-history and shared-runtime vision projection:
+A machine-generated vision packet may include one optional path delta. It
+makes a bounded loop's look-back explicit without adding more inline CLI flags
+or expanding the heartbeat prompt. The packet is written through the existing
+`--agent-vision-json` boundary and is retained in the same agent-scoped
+run-history and shared-runtime vision projection.
+
+The delta is a nested object of the vision packet: `goal_path_delta_v0` is its
+`schema_version`, not the key that carries it. The enclosing field is
+`path_delta`, as in the packet below. Nesting the delta under its own schema
+name instead of `path_delta` is rejected by the write path rather than
+silently dropped.
 
 ```json
 {
-  "schema_version": "goal_path_delta_v0",
-  "outcome": "replan",
-  "prior_assumption": "The current monitor lane would produce acceptance evidence.",
-  "observed_reality": "Two bounded polls produced no material transition.",
-  "retained": ["Keep the verified monitor target and evidence refs."],
-  "changed": ["Create one runnable advancement successor."],
-  "stopped": ["Stop treating future polling as completion evidence."],
-  "unresolved_questions": ["Which successor can falsify the new path?"],
-  "reentry_condition": "Resume the monitor-only wait after successor evidence lands.",
-  "evidence_refs": ["evidence:monitor-poll-02", "todo:successor-01"]
+  "agent_id": "<agent that made the comparison>",
+  "path_delta": {
+    "schema_version": "goal_path_delta_v0",
+    "outcome": "replan",
+    "prior_assumption": "The current monitor lane would produce acceptance evidence.",
+    "observed_reality": "Two bounded polls produced no material transition.",
+    "retained": ["Keep the verified monitor target and evidence refs."],
+    "changed": ["Create one runnable advancement successor."],
+    "stopped": ["Stop treating future polling as completion evidence."],
+    "unresolved_questions": ["Which successor can falsify the new path?"],
+    "reentry_condition": "Resume the monitor-only wait after successor evidence lands.",
+    "evidence_refs": ["evidence:monitor-poll-02", "todo:successor-01"]
+  }
 }
 ```
 
