@@ -119,6 +119,20 @@ CREDENTIAL_VARIABLE_REFERENCE_PATTERN = re.compile(
     r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\s*[,)\]}]"
 )
 
+# A virtualenv is identified by its marker file rather than by its name.
+# `DEFAULT_SKIP_DIRS` can only list the names it already knows, so a project
+# that names its environment `.venv-conn`, `venv311`, or anything else would
+# have `site-packages` scanned as repository content, producing credential and
+# private-IP hits from vendored third-party source.
+VIRTUALENV_MARKER_FILE = "pyvenv.cfg"
+
+
+def is_virtualenv_root(path: Path) -> bool:
+    try:
+        return (path / VIRTUALENV_MARKER_FILE).is_file()
+    except OSError:
+        return False
+
 
 def _credential_match_is_reference(line: str, match: re.Match[str]) -> bool:
     value = line[match.start() :]
@@ -752,14 +766,18 @@ def iter_scan_files(scan_root: Path) -> list[Path]:
     root_parts = set(scan_root.parts)
     if any(part in DEFAULT_SKIP_DIRS or part.endswith(".egg-info") for part in root_parts):
         return sorted(tracked_files)
+    if is_virtualenv_root(scan_root):
+        return sorted(tracked_files)
 
     for dir_path, dir_names, file_names in os.walk(scan_root):
+        current_dir = Path(dir_path)
         dir_names[:] = [
             name
             for name in dir_names
-            if name not in DEFAULT_SKIP_DIRS and not name.endswith(".egg-info")
+            if name not in DEFAULT_SKIP_DIRS
+            and not name.endswith(".egg-info")
+            and not is_virtualenv_root(current_dir / name)
         ]
-        current_dir = Path(dir_path)
         for file_name in file_names:
             path = (current_dir / file_name).resolve()
             if path.name.endswith(".local.json"):
