@@ -113,3 +113,60 @@ export function teamPlanGoalId(parameters: Record<string, unknown>): string {
   const plan = asRecord(parameters.plan);
   return asText(parameters.goal_id) || asText(plan.goal_id);
 }
+
+/**
+ * What confirming a plan actually did, read from the receipt the apply wrote.
+ *
+ * A confirmation the owner was shown as one commitment can create every lane,
+ * some of them, or find them already present. The receipt is the only surface
+ * that knows which happened, so the card reads it instead of reporting every
+ * applied plan as the same success.
+ */
+export type TeamPlanAppliedOutcome = {
+  kind: "applied" | "partially_applied" | "already_present";
+  created: number;
+  gaps: number;
+};
+
+export function teamPlanAppliedOutcome(receipt: unknown): TeamPlanAppliedOutcome | null {
+  const record = asRecord(receipt);
+  const outcome = asText(record.outcome);
+  if (!outcome.startsWith("team_plan_")) return null;
+  const lanes = Array.isArray(record.lanes) ? record.lanes.length : 0;
+  const gaps = typeof record.gap_count === "number" ? record.gap_count : 0;
+  if (outcome === "team_plan_partially_applied") {
+    return { kind: "partially_applied", created: lanes, gaps };
+  }
+  if (outcome === "team_plan_lanes_already_present") {
+    return { kind: "already_present", created: lanes, gaps };
+  }
+  if (outcome === "team_plan_applied") {
+    return { kind: "applied", created: lanes, gaps };
+  }
+  // A plan whose receipt the apply recorded as a typed failure is not an applied
+  // outcome, so the card keeps the failure it already renders.
+  return null;
+}
+
+/**
+ * The line an applied plan shows, or the surface's own applied sentence.
+ *
+ * A partial application names how many lanes exist and how many were left
+ * unstaffed, because "applied" alone told the owner that a commitment was kept
+ * when part of it was not.
+ */
+export function teamPlanAppliedLine(
+  outcome: TeamPlanAppliedOutcome | null,
+  t: WorkspaceTranslate,
+): string {
+  if (outcome?.kind === "partially_applied") {
+    return t("proposal.teamPlan.appliedPartially", {
+      created: String(outcome.created),
+      gaps: String(outcome.gaps),
+    });
+  }
+  if (outcome?.kind === "already_present") {
+    return t("proposal.teamPlan.appliedAlreadyPresent");
+  }
+  return t("drawer.proposalApplied");
+}

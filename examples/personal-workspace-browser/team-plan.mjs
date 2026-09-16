@@ -205,7 +205,9 @@ export const teamPlanScenario = {
         "confirming sends exactly one apply for the confirmed proposal",
       );
       check(api.durableWriteCount === 1, "the confirmed apply performed exactly one durable write");
-      await drawer.getByText("已应用，LoopX 状态将刷新。", { exact: true })
+      // The plan the owner confirmed staffed one lane and left one unstaffed, so
+      // the card has to report a partial application instead of a full success.
+      await drawer.getByText("部分组建：已创建 1 条 lane，1 条未组建。", { exact: true })
         .waitFor({ state: "visible", timeout: 15_000 });
       await page.screenshot({
         path: resolve(outputDir, "team-plan-applied.png"),

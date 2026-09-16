@@ -2,6 +2,7 @@ import type { ActionReviewPlan } from "../../../../../../loopx/control_plane/pre
 import type { GoalAcceptanceObservation } from "../../data/goal-acceptance-observation";
 import type { AttentionDetails } from "./attention-details";
 import type { WorkspaceLoadError } from "../../data/workspace-progressive-status";
+import type { TeamPlanAppliedOutcome } from "./team-plan-preview";
 export type WorkspaceGoalState =
   | "需修复"
   | "等你"
@@ -231,6 +232,14 @@ export type WorkspaceActionPreview = {
   previewId: string;
   primaryLabel?: string;
   errorMessage?: string;
+  /**
+   * What an applied team plan actually did, read from its receipt.
+   *
+   * A confirmation can create every lane, some of them, or find them already
+   * present; the card shows which happened instead of one success sentence for
+   * all three.
+   */
+  teamPlanOutcome?: TeamPlanAppliedOutcome;
   status: "draft" | "ready" | "applying" | "applied" | "gated" | "stale" | "error" | "rejected" | "deferred";
   title: string;
   sourceRequest?: WorkspaceActionPreviewRequest;

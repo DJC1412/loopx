@@ -1565,11 +1565,40 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
         state.durableResources.add(resourceKey);
         state.durableWriteCount += 1;
       }
+      // A confirmed team plan reports what it actually materialized: the lanes
+      // it created and the lanes it could not staff. The card reads this receipt,
+      // so the fixture has to answer with the same shape the product writes.
+      const teamPlanReceipt = (() => {
+        if (actionKind !== "team.plan") return null;
+        // An injected proposal lives in the action store rather than in the
+        // session previews, so the plan is read from whichever holds it.
+        const plan = actionProposals.get(apply[1])?.normalized_parameters?.plan
+          ?? preview?.normalized_parameters?.plan;
+        const lanes = Array.isArray(plan?.lanes)
+          ? plan.lanes
+          : [];
+        const ready = lanes.filter((lane) => lane?.staffing !== "gap");
+        const gaps = lanes.length - ready.length;
+        return {
+          projection_verified: true,
+          receipt_id: "fixture-team-plan-receipt",
+          outcome: gaps === 0 ? "team_plan_applied" : "team_plan_partially_applied",
+          ...(gaps ? { gap_count: gaps } : {}),
+          lanes: ready.map((lane, index) => ({
+            lane_id: lane.lane_id,
+            agent_id: lane.agent_id,
+            priority: lane.first_todo?.priority ?? "P1",
+            disposition: "created",
+            todo_id: `todo_fixture_lane_${index + 1}`,
+            acceptance: lane.acceptance,
+          })),
+        };
+      })();
       const proposal = {
         schema_version: "loopx_chat_action_proposal_v1", proposal_id: apply[1], action_kind: actionKind,
         summary: "已应用", normalized_parameters: preview?.normalized_parameters ?? {}, context: preview?.context ?? {}, expected_state_fingerprint: "fixture-r1",
         permission_classification: "durable_write", validation_evidence: [], available_transitions: ["apply", "cancel"],
-        status: "applied", receipt: { projection_verified: true, receipt_id: "fixture-receipt" }, stale: null, created_at: "2026-08-13T01:00:00Z", updated_at: "2026-08-13T01:00:01Z",
+        status: "applied", receipt: teamPlanReceipt ?? { projection_verified: true, receipt_id: "fixture-receipt" }, stale: null, created_at: "2026-08-13T01:00:00Z", updated_at: "2026-08-13T01:00:01Z",
       };
       actionProposals.set(apply[1], proposal);
       await route.fulfill({ contentType: "application/json", json: { ok: true, proposal, turn: acceptedTurn }, status: acceptedTurn ? 202 : 200 });

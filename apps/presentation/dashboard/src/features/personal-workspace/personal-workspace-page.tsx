@@ -4,6 +4,7 @@ import {
 } from "../../../../../../loopx/control_plane/presentation/action_review_plan.js";
 import { refreshAttention } from "./attention-details";
 import { teamPlanFields, teamPlanGoalId, teamPlanLaneCount } from "./team-plan-preview";
+import { teamPlanAppliedOutcome } from "./team-plan-preview";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent } from "react";
 import { AlertCircle, Bot, CalendarClock, FileText, ListPlus, MessageCircleQuestion, Paperclip, Plus, RefreshCw, Send, X } from "lucide-react";
 
@@ -633,6 +634,11 @@ function workspaceProposal(proposal: TypedActionProposal, t: WorkspaceTranslate)
       && reviewPlan.interaction !== "completed"
       ? "error"
       : proposalStatus(proposal.status),
+    // A confirmed plan reports what its receipt recorded, so a partial
+    // application cannot read as a full success on this card.
+    teamPlanOutcome: proposal.action_kind === "team.plan"
+      ? teamPlanAppliedOutcome(proposal.receipt) ?? undefined
+      : undefined,
     title: localizedSummary,
   };
 }

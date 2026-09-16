@@ -13,7 +13,13 @@ import {
   typedActionKindSchema,
   typedActionProposalSchema,
 } from "../src/data/chat.js";
-import { teamPlanFields, teamPlanGoalId, teamPlanLaneCount } from "../src/features/personal-workspace/team-plan-preview.js";
+import {
+  teamPlanAppliedLine,
+  teamPlanAppliedOutcome,
+  teamPlanFields,
+  teamPlanGoalId,
+  teamPlanLaneCount,
+} from "../src/features/personal-workspace/team-plan-preview.js";
 
 const GOAL_ID = "team-plan-smoke-goal";
 
@@ -166,6 +172,54 @@ check(
 check(
   fields.some((field) => field.value.includes("agent-") === true && field.value.includes("ready") === true) === false,
   "the card never renders a lane as already created",
+);
+
+// An applied plan reports what the receipt recorded: the lanes that exist and
+// the lanes that were left unstaffed, instead of one success sentence for every
+// outcome. A receipt without a team-plan outcome keeps the surface's own line.
+const outcomeTranslate = (key: string, values?: Record<string, string | number>) => {
+  const table: Record<string, string> = {
+    "drawer.proposalApplied": "Applied. LoopX state will refresh.",
+    "proposal.teamPlan.appliedPartially": "Applied partially: {created} lane(s) created, {gaps} left unstaffed.",
+    "proposal.teamPlan.appliedAlreadyPresent": "The confirmed lanes already existed, so nothing was duplicated.",
+  };
+  const template = table[key] ?? key;
+  return Object.entries(values ?? {}).reduce(
+    (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+    template,
+  );
+};
+
+const partialOutcome = teamPlanAppliedOutcome({
+  outcome: "team_plan_partially_applied",
+  gap_count: 1,
+  lanes: [{ lane_id: "lane_backend" }],
+});
+check(partialOutcome?.kind === "partially_applied", "a partial application is read as partial");
+check(
+  partialOutcome?.created === 1 && partialOutcome?.gaps === 1,
+  "the partial outcome counts the lanes that exist and the lanes left unstaffed",
+);
+check(
+  teamPlanAppliedLine(partialOutcome, outcomeTranslate as never)
+    === "Applied partially: 1 lane(s) created, 1 left unstaffed.",
+  "a partial application says how much of the plan was created",
+);
+check(
+  teamPlanAppliedLine(
+    teamPlanAppliedOutcome({ outcome: "team_plan_lanes_already_present", lanes: [{}, {}] }),
+    outcomeTranslate as never,
+  ) === "The confirmed lanes already existed, so nothing was duplicated.",
+  "a replayed plan says the lanes already existed instead of claiming a new creation",
+);
+check(
+  teamPlanAppliedLine(teamPlanAppliedOutcome({ projection_verified: true }), outcomeTranslate as never)
+    === "Applied. LoopX state will refresh.",
+  "a receipt without a team-plan outcome keeps the surface's own applied line",
+);
+check(
+  teamPlanAppliedOutcome({ outcome: "team_plan_no_staffable_lane" }) === null,
+  "a typed failure is not read as an applied outcome",
 );
 
 if (process.exitCode !== 1) console.log("team plan proposal smoke ok");
