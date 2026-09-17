@@ -52,6 +52,13 @@ class LongTodoChainObservation:
         }
         if self.frontier_revision_complete and self.frontier_revision:
             trigger["frontier_revision"] = self.frontier_revision
+        if self.frontier_owned_identity:
+            # Refs #4610: the ACK fence also matches on the identity of the rows
+            # this agent owns, so another lane claiming or editing an unclaimed
+            # row must not re-arm the obligation. The typed-delta writeback
+            # records this trigger verbatim, so dropping the identity here would
+            # leave that fence inert for every writeback-path ACK.
+            trigger["frontier_owned_identity"] = self.frontier_owned_identity
         return trigger
 
 

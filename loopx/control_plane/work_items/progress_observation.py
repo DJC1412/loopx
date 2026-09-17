@@ -404,12 +404,17 @@ def replan_obligation_trigger_checkpoints(
         frontier_revision = str(trigger.get("frontier_revision") or "").strip()
         if not kind or not frontier_revision:
             continue
-        checkpoints.append(
-            {
-                "kind": kind,
-                "frontier_revision": frontier_revision,
-            }
-        )
+        checkpoint = {
+            "kind": kind,
+            "frontier_revision": frontier_revision,
+        }
+        # Refs #4610: carry the identity over the rows this agent owns, so the
+        # ACK fence can keep a writeback-path ACK valid when another lane claims
+        # or edits an unclaimed row without changing this agent's own chain.
+        owned_identity = str(trigger.get("frontier_owned_identity") or "").strip()
+        if owned_identity:
+            checkpoint["frontier_owned_identity"] = owned_identity
+        checkpoints.append(checkpoint)
     return checkpoints
 
 

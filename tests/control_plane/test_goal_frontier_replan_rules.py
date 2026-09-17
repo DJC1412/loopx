@@ -29,6 +29,9 @@ from loopx.control_plane.work_items.interaction_contract import (
     build_interaction_contract,
     interaction_next_cli_actions,
 )
+from loopx.control_plane.work_items.progress_observation import (
+    replan_obligation_trigger_checkpoints,
+)
 
 
 @pytest.mark.parametrize(
@@ -228,12 +231,13 @@ def _accepted_long_chain_ack(obligation: dict[str, object]) -> dict[str, object]
 def _derive_long_chain(
     source_items: list[dict[str, object]],
     *,
+    agent_todo_summary: dict[str, object] | None = None,
     latest_replan_ack: dict[str, object] | None = None,
     current_transition_replan_ack: dict[str, object] | None = None,
 ) -> dict[str, object] | None:
     return derive_goal_frontier_replan_obligation_from_summaries(
         user_todo_summary={"open_count": 0},
-        agent_todo_summary=_long_chain_summary(source_items),
+        agent_todo_summary=agent_todo_summary or _long_chain_summary(source_items),
         agent_todo_source_items=source_items,
         work_lane_contract={"lane": "advancement_task", "must_attempt_work": True},
         agent_id="current-agent",
@@ -269,6 +273,104 @@ def test_long_todo_chain_checkpoint_is_edge_triggered_and_rearms_on_change() -> 
     assert rearmed["triggers"][0]["frontier_revision"] != (
         original["triggers"][0]["frontier_revision"]
     )
+
+
+def test_writeback_ack_owned_identity_absorbs_a_peer_claim() -> None:
+    """A writeback ACK must survive a peer claim on an unclaimed row.
+
+    The writeback path records ``replan_obligation_trigger_checkpoints``, so the
+    identity over this agent's own rows has to survive the trigger -> checkpoint
+    hop. Without it the recorded ACK only carries the frontier revision, which a
+    peer lane moves by claiming an unclaimed row, and every such claim re-arms
+    the obligation even though this agent's own selectable chain is unchanged.
+    """
+
+    claimed_items = [
+        {
+            **_advancement(f"todo_{index:012x}", "current-agent"),
+            "updated_at": "2026-08-22T09:00:00+08:00",
+        }
+        for index in range(15)
+    ]
+    unclaimed_item = {
+        **_advancement("todo_0000000000ff", ""),
+        "updated_at": "2026-08-22T09:00:00+08:00",
+    }
+
+    def summary(
+        unclaimed: list[dict[str, object]],
+        other_agents: list[dict[str, object]],
+    ) -> dict[str, object]:
+        return {
+            "open_count": 16,
+            "current_agent_claimed_open_count": 15,
+            "current_agent_claimed_advancement_count": 15,
+            "unclaimed_open_count": len(unclaimed),
+            "unclaimed_priority_open_items": unclaimed,
+            "executable_backlog_items": [*claimed_items, *unclaimed, *other_agents],
+            "claim_scope": {"other_agent_claimed_items": other_agents},
+        }
+
+    obligation = _derive_long_chain(
+        [*claimed_items, unclaimed_item],
+        agent_todo_summary=summary([unclaimed_item], []),
+    )
+    assert obligation is not None
+    trigger = obligation["triggers"][0]
+    assert trigger["frontier_owned_identity"].startswith(
+        "todo_frontier_revision_v0:owned:"
+    )
+
+    checkpoints = replan_obligation_trigger_checkpoints(obligation)
+    assert [row["kind"] for row in checkpoints] == ["long_todo_chain"]
+    assert checkpoints[0]["frontier_owned_identity"] == (
+        trigger["frontier_owned_identity"]
+    )
+
+    ack = {
+        "schema_version": "autonomous_replan_ack_v0",
+        "recorded": True,
+        "generated_at": "2026-08-22T09:05:00+08:00",
+        "semantic_delta": {
+            "schema_version": "replan_semantic_delta_v0",
+            "accepted": True,
+            "outcomes": ["new_surface"],
+            "satisfying_outcomes": ["new_surface"],
+            "trigger_kinds": ["long_todo_chain"],
+            "trigger_checkpoints": checkpoints,
+            "obligation_id": obligation["obligation_id"],
+        },
+    }
+
+    peer_claimed_item = {
+        **unclaimed_item,
+        "claimed_by": "peer-agent",
+        "updated_at": "2026-08-22T09:20:00+08:00",
+    }
+    peer_items = [*claimed_items, peer_claimed_item]
+    peer_summary = summary([], [peer_claimed_item])
+
+    rearmed = _derive_long_chain(peer_items, agent_todo_summary=peer_summary)
+    assert rearmed is not None
+    assert rearmed["obligation_id"] != obligation["obligation_id"]
+    assert rearmed["triggers"][0]["frontier_revision"] != (
+        trigger["frontier_revision"]
+    )
+    assert rearmed["triggers"][0]["frontier_owned_identity"] == (
+        trigger["frontier_owned_identity"]
+    )
+    assert _derive_long_chain(
+        peer_items, agent_todo_summary=peer_summary, latest_replan_ack=ack
+    ) is None
+
+    revision_only_ack = deepcopy(ack)
+    for row in revision_only_ack["semantic_delta"]["trigger_checkpoints"]:
+        row.pop("frontier_owned_identity")
+    assert _derive_long_chain(
+        peer_items,
+        agent_todo_summary=peer_summary,
+        latest_replan_ack=revision_only_ack,
+    ) is not None
 
 
 def test_frontier_revision_index_preserves_complete_agent_lane_semantics() -> None:
