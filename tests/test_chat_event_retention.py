@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import loopx.chat_store as chat_store
+from loopx.chat_event_cache import TERMINAL_EVENT_CACHE_TURNS
 from loopx.chat_store import CHAT_TURN_SCHEMA_VERSION, ChatSessionStore
 
 
@@ -39,8 +40,9 @@ def _write_completed_turn(root: Path, *, with_events: bool = True) -> tuple[Path
     return turn_path, event_path
 
 
-def test_terminal_event_history_does_not_remain_in_the_hot_cache(
+def test_completed_turn_replay_reads_its_log_once_within_a_bounded_budget(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     store = ChatSessionStore(tmp_path)
     key = ("session", "turn")
@@ -52,14 +54,50 @@ def test_terminal_event_history_does_not_remain_in_the_hot_cache(
     )
     store.append_event(*key, kind="turn.completed", payload={})
 
+    # The writer still refuses to retain terminal history, so a completed Turn
+    # only becomes resident when a reader asks to replay it.
     assert key not in store._event_cache
     assert key not in store._event_cache_revision
-    assert [row["kind"] for row in store.events_after(*key, None)] == [
-        "assistant.delta",
-        "turn.completed",
+
+    reads: list[Path] = []
+    original_read_jsonl = chat_store._read_jsonl
+
+    def counted_read_jsonl(path: Path):
+        reads.append(path)
+        return original_read_jsonl(path)
+
+    monkeypatch.setattr(chat_store, "_read_jsonl", counted_read_jsonl)
+    for _ in range(5):
+        assert [row["kind"] for row in store.events_after(*key, None)] == [
+            "assistant.delta",
+            "turn.completed",
+        ]
+
+    # A finished Turn stops being written, so one read has to serve every later
+    # replay of it; re-reading per replay is what the throughput contract bans.
+    assert len(reads) == 1, reads
+
+
+def test_completed_turn_retention_is_bounded_to_the_replay_budget(
+    tmp_path: Path,
+) -> None:
+    store = ChatSessionStore(tmp_path)
+    keys = [
+        (f"session-{index}", "turn")
+        for index in range(TERMINAL_EVENT_CACHE_TURNS + 2)
     ]
-    assert key not in store._event_cache
-    assert key not in store._event_cache_revision
+    for key in keys:
+        store.append_event(*key, kind="assistant.delta", payload={"text": "d"}, buffered=True)
+        store.append_event(*key, kind="turn.completed", payload={})
+        store.events_after(*key, None)
+
+    # Retention is bounded by the budget, not by nothing: the oldest finished
+    # Turns are dropped and the newest stay replayable.
+    resident = store._event_log.resident_finished_keys()
+    assert len(resident) == TERMINAL_EVENT_CACHE_TURNS
+    assert len(store._event_cache) == TERMINAL_EVENT_CACHE_TURNS
+    assert keys[0] not in resident
+    assert keys[-1] in resident
 
 
 def test_keyed_locks_are_released_after_callers_drop_them(tmp_path: Path) -> None:
