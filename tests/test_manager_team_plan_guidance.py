@@ -20,19 +20,17 @@ def test_manager_guidance_orders_one_team_preview_before_any_effect() -> None:
     positions = [text.index(marker) for marker in ordered]
     assert positions == sorted(positions), ordered
 
-    # The preview gates every effect, and the effects keep their canonical owners.
-    assert "proposal, never an effect" in text
-    assert "until the owner confirms that exact preview" in text
-    # A plan is admitted only for the Goal it names, and the confirmation is the
-    # product surface's typed action rather than something the steward performs.
-    assert "Name the exact Goal the plan\nstaffs" in text
-    assert "dropped instead of shown" in text
-    assert "typed team-plan action from the product\nsurface" in text
-    # A lane may not be claimed to exist before its apply receipt returns.
-    assert "before the\napply receipt returns" in text
-    assert "the plan went stale" in text
-    assert "Agent\nregistration, Todo creation, quota or goal policy" in text
-    assert "charge quota for the preview itself" in text
+    prose = " ".join(text.split())
+    assert "not a universal second approval" in prose
+    assert "Do not create the proposed lanes before the exact preview is confirmed" in prose
+    assert "Read the apply receipt before reporting assignments" in prose
+    assert "does not attest receiver adoption" in prose
+    assert "Never impersonate a receiving Agent as the author" in prose
+    assert "Retry the same proposal" in prose
+    assert "Do not regenerate every lane" in prose
+    assert "registration, quota and Goal policy remain separate owners" in prose
+    assert "Name the exact Goal the plan staffs" in prose
+    assert "dropped instead of shown" in prose
     # An unstaffable lane is named as a gap rather than invented.
     assert "as a gap, with the missing registration or grant" in text
     # Guidance is read as prose, so its phrases are compared as prose: a line

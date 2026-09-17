@@ -220,6 +220,55 @@ function withMachineConfiguration(capability, { configuration, description }) {
   };
 }
 
+/**
+ * The receipt a confirmed team plan writes, for the plan the fixture stored.
+ *
+ * The product answers an apply with the plan's own outcome, so a scenario that
+ * confirms a plan carrying a staffing gap has to observe the same readback the
+ * card renders: which lanes became work and which ones stayed unstaffed, with
+ * the host fact behind each gap. The lanes are derived from the stored plan
+ * because that is the plan the apply was confirmed against.
+ */
+function teamPlanApplyReceipt(proposal) {
+  const plan = proposal?.normalized_parameters?.plan;
+  if (!plan || typeof plan !== "object" || !Array.isArray(plan.lanes)) return null;
+  const ready = plan.lanes.filter((lane) => lane.staffing !== "gap");
+  const gaps = plan.lanes.filter((lane) => lane.staffing === "gap");
+  const receipt = {
+    projection_verified: true,
+    receipt_id: "fixture-team-plan-receipt",
+  };
+  if (ready.length > 0) {
+    receipt.outcome = gaps.length > 0 ? "team_plan_partially_applied" : "team_plan_applied";
+  }
+  if (ready.length > 0) {
+    receipt.resource_ids = {
+      goal_id: proposal?.normalized_parameters?.goal_id ?? null,
+      todo_id: `todo_${ready[0].lane_id}`,
+      lane_todo_ids: ready.map((lane) => `todo_${lane.lane_id}`),
+    };
+    receipt.lanes = ready.map((lane) => ({
+      lane_id: lane.lane_id,
+      agent_id: lane.agent_id,
+      priority: lane.first_todo?.priority ?? "P1",
+      disposition: "created",
+      todo_id: `todo_${lane.lane_id}`,
+      acceptance: lane.acceptance,
+    }));
+  }
+  if (gaps.length > 0) {
+    // The count and the lanes it counts stay together, and a lane that stayed
+    // unstaffed names the Agent it was meant to run on.
+    receipt.gap_count = gaps.length;
+    receipt.gap_lanes = gaps.map((lane) => ({
+      lane_id: lane.lane_id,
+      agent_id: lane.agent_id,
+      reason_code: lane.gap_reason_code,
+    }));
+  }
+  return receipt;
+}
+
 export function startServer() {
   if (packaged) {
     return spawn(process.env.LOOPX_PYTHON_BIN || "python3", [
@@ -340,6 +389,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
   const state = {
     nextLifecycleProposalPatch: null,
     nextLifecycleApplyOutcome: null,
+    loseNextTeamPlanResponse: false,
     actionApplies: [],
     actionCancels: [],
     actionPreviews: [],
@@ -1561,17 +1611,27 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
         );
       }
       const resourceKey = `${actionKind}:${apply[1]}`;
-      if (!state.durableResources.has(resourceKey)) {
+      const replay = state.durableResources.has(resourceKey);
+      if (!replay) {
         state.durableResources.add(resourceKey);
         state.durableWriteCount += 1;
       }
+      // Injected proposals live in the action store, not in the session
+      // previews, so the plan a confirmed card carries has to be read there.
+      const teamPlanReceipt = teamPlanApplyReceipt(actionProposals.get(apply[1]));
+      if (teamPlanReceipt && replay) teamPlanReceipt.outcome = "team_plan_commit_recovered";
       const proposal = {
         schema_version: "loopx_chat_action_proposal_v1", proposal_id: apply[1], action_kind: actionKind,
-        summary: "已应用", normalized_parameters: preview?.normalized_parameters ?? {}, context: preview?.context ?? {}, expected_state_fingerprint: "fixture-r1",
+        summary: "已应用", normalized_parameters: preview?.normalized_parameters ?? actionProposals.get(apply[1])?.normalized_parameters ?? {}, context: preview?.context ?? actionProposals.get(apply[1])?.context ?? {}, expected_state_fingerprint: "fixture-r1",
         permission_classification: "durable_write", validation_evidence: [], available_transitions: ["apply", "cancel"],
-        status: "applied", receipt: { projection_verified: true, receipt_id: "fixture-receipt" }, stale: null, created_at: "2026-08-13T01:00:00Z", updated_at: "2026-08-13T01:00:01Z",
+        status: "applied", receipt: teamPlanReceipt ?? { projection_verified: true, receipt_id: "fixture-receipt" }, stale: null, created_at: "2026-08-13T01:00:00Z", updated_at: "2026-08-13T01:00:01Z",
       };
       actionProposals.set(apply[1], proposal);
+      if (actionKind === "team.plan" && state.loseNextTeamPlanResponse) {
+        state.loseNextTeamPlanResponse = false;
+        await route.fulfill({ contentType: "application/json", status: 503, json: { ok: false, error: "Assignment response unavailable", error_code: "team_plan_response_lost" } });
+        return;
+      }
       await route.fulfill({ contentType: "application/json", json: { ok: true, proposal, turn: acceptedTurn }, status: acceptedTurn ? 202 : 200 });
       return;
     }

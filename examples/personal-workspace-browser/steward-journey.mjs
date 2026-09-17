@@ -19,7 +19,7 @@ import { openWorkspacePage } from "./scenario-context.mjs";
 const GOAL_ID = "product-release";
 const GOAL_TITLE = "Product Release";
 const PROPOSAL_ID = "proposal-steward-journey-fixture";
-const PLAN_SUMMARY = "为 product-release 配出 2 条 lane 的团队";
+const PLAN_SUMMARY = "为 product-release 分配 2 项任务";
 const READY_TODO = "Implement the bounded intake";
 const GAP_TODO = "Independently review the intake";
 const STEWARD_PROMPT = "找下一步";
@@ -218,7 +218,8 @@ export const stewardJourneyScenario = {
         if (!turn) await page.waitForTimeout(50);
       }
       check(Boolean(turn), "the steward prompt reaches the Goal conversation as an accepted Turn");
-      const row = page.locator(".personal-proposal-row", { hasText: PLAN_SUMMARY });
+      const row = page.locator(".personal-proposal-row.is-ready", { hasText: "team.plan" })
+        .filter({ hasText: GOAL_ID });
       await row.waitFor({ state: "visible", timeout: 15_000 });
       await row.click();
       const drawer = page.locator('.personal-context-drawer[data-context-kind="proposal"]');
@@ -230,12 +231,12 @@ export const stewardJourneyScenario = {
         "a ready lane shows its first bounded Todo with priority and action kind",
       );
       check(
-        previewText.includes("未配齐") && previewText.includes(GAP_TODO),
+        previewText.includes("待安排") && previewText.includes(GAP_TODO),
         "a gap lane says it is unstaffed and keeps the work it did not staff",
       );
       check(
-        previewText.includes("确认后会通过既有 owner"),
-        "the card states that confirming is what creates the lanes",
+        previewText.includes("确认后分配可安排的任务"),
+        "the card states that confirmation assigns available tasks",
       );
       record("2-ask-and-plan-card", {
         accepted_turn: turn?.turnId ?? null,
@@ -253,7 +254,7 @@ export const stewardJourneyScenario = {
 
       // Beat 3: confirm, and record what the workspace actually reports after
       // the canonical owner ran.
-      const confirm = drawer.getByRole("button", { name: "确认并组建各 lane", exact: true });
+      const confirm = drawer.getByRole("button", { name: "确认分配", exact: true });
       check(await confirm.count() === 1, "exactly one confirmation control is offered");
       await confirm.click();
       for (let attempt = 0; attempt < 60 && api.actionApplies.length === 0; attempt += 1) {
@@ -264,24 +265,30 @@ export const stewardJourneyScenario = {
         "confirming sends exactly one apply for the confirmed proposal",
       );
       check(api.durableWriteCount === 1, "the confirmed apply performed exactly one durable write");
-      const applied = drawer.getByText("已应用，LoopX 状态将刷新。", { exact: true });
+      const applied = drawer.getByRole("heading", { name: "已分配 1 项，1 项待安排", exact: true });
       await applied.waitFor({ state: "visible", timeout: 15_000 });
+      const resultText = await drawer.locator(".personal-team-plan-result").innerText();
+      const assignmentVisible = resultText.includes("agent-backend") && resultText.includes(READY_TODO);
+      const gapVisible = resultText.includes("agent-reviewer") && resultText.includes(GAP_TODO)
+        && resultText.includes("待安排 · 尚未加入此目标");
+      check(assignmentVisible && gapVisible, "the result names assigned work and pending work with its reason");
+      check(await confirm.count() === 0, "the completed result removes its confirmation control");
       record("3-confirm", {
         applies: api.actionApplies.length,
         durable_writes: api.durableWriteCount,
         outcome_text: await applied.innerText(),
-        outcome_fidelity: "single applied sentence; no per-lane committed/partial/all-gap/stale/rejected",
+        outcome_fidelity: "assigned task and pending task with reason; execution remains unverified",
       });
       gaps.push({
         beat: "3-confirm",
-        need: "per-lane outcome after confirm (committed / partial / all-gap / stale / rejected)",
-        status: "gap",
-        probe: { selectors: [], phrases: ["部分", "缺人", "已提交", "未配齐"] },
+        need: "partial assignment result names assigned and pending work with a reason",
+        status: assignmentVisible && gapVisible ? "present" : "gap",
+        probe: { selectors: [".personal-team-plan-result"], phrases: [READY_TODO, GAP_TODO, "尚未加入此目标"] },
         observed: {
-          matched_phrases: (await drawer.innerText()).includes("部分") ? ["部分"] : [],
-          surface_text: await applied.innerText(),
+          matched_phrases: [READY_TODO, GAP_TODO, "尚未加入此目标"].filter((phrase) => resultText.includes(phrase)),
+          surface_text: resultText,
         },
-        owner_hint: "steward R1 remainder (confirmation card outcome fidelity)",
+        owner_hint: "steward assignment result; receiver adoption and execution require separate evidence",
       });
       await page.screenshot({
         path: resolve(outputDir, "steward-journey-3-confirmed.png"),

@@ -300,7 +300,11 @@ R2 的一条依赖必须通过真实 LoopX Agent 间的请求/产物交接完成
 
 以下是精确基线上的合成 fixture 结果，不含线上用户内容。F1–F4 用现有 `ChatActionService.preview/apply` 及隔离 Goal 复核；F4 只在第二次 Todo 写入前注入失败，其余走实际本地 Todo writer。F5–F7 是源码/合同审计。
 
-**修复状态（2026-09-17，基线 `6979d528b`）。** 下表保留审计当时的事实。R1 已收口 F1 的优先级与验收部分、全部 F3、F2，以及 F4 的对账部分：确认后的 lane 现在把声明的优先级保留在自己的 Todo 标签里；结算 receipt 会把每条 lane 的 acceptance 保留在它变成的 Todo 身份旁；部分落地返回 `team_plan_partially_applied` 并带缺口数量，而不是完整成功；没有任何 lane 可组建的确认记为 typed failure `team_plan_no_staffable_lane`，不再是一份空 Todo id 的已应用计划；团队计划预览现在绑定该 Goal 的 active-state 意图与这些 lane 将要推进的 canonical basis；某条 lane 在更早的 lane 已提交后写入失败时，记为 typed failure `team_plan_lane_write_failed`，其 details 同时给出"已存在哪些 lane Todo"和"哪条 lane 失败"，因此重试是对着真实身份做对账而不是再创建一份。剩余部分由 canonical Todo 承接：计划级 quota/stop 分类、F4 的自动恢复与执行屏障（无需业主重新确认即可补完部分计划的可重入 apply），以及确认卡片把部分落地渲染为部分。
+**R1 事务检查点。** 团队计划准入与整批规划现在归 `work_items/team_plan.ts`。确认后，全部已准入 lane 与持久操作回执一次提交；身份由 proposal + lane 决定，不再由 Todo 文本决定。File/SQLite 权威复用现有 CAS 与回执 owner；legacy Markdown 在原有 fence 和锁内同时写入任务和不可变回执。同一操作重试只读历史结果，接收者后来修改、完成或删除任务也不会触发重建。提交前失败不会留下部分 lane；canonical 展示投递仍 pending 时，Chat 必须恢复后才能报告验证成功。卡片列出部分分配及缺口；quota/stop 是参考，显式强制声明会被拒绝。
+
+这完成 F4 的本地分配/重试部分，不等于 R1 协同验收。注册接收者可以被分配任务，但不会被冒充为作者；Agent 发起的结算未经业主确认不能给另一 peer 分配任务。分配不证明接收者采纳、lease、执行、依赖消费或独立验收。普通已授权工作不应普遍增加第二次确认。解决缺口需要明确的新意图；重放不能静默扩展原确认子集。fingerprint 绑定当前本地状态与 canonical revision，不是完整共享 Goal 意图事务。R2/R3/R4 仍负责执行器资格、接收者采纳/结果返回及共享意图/授权；跨主机 Turn lease 不是计划屏障。
+
+验证覆盖真实 Chat apply、文件权威投递恢复、打包确认卡片，以及 FileAuthorityStore 和隔离 PostgreSQL 上的同文不同身份、并发提交、末条 lane 非法、响应丢失和接收者变更。这些 fixture 不验收 Lark 传输或跨主机 worker 执行。
 
 | ID / 优先级 | 触发、结果与影响 | 定位与修复卡 |
 | --- | --- | --- |

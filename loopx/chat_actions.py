@@ -293,9 +293,14 @@ class ChatActionService(
             ).hexdigest()
         except OSError:
             state_digest = None
+        from .control_plane.coordination.local_authority import read_canonical_todos_if_promoted
+        from .control_plane.coordination.local_authority_shadow_adapter import effective_runtime_root
+        canonical = read_canonical_todos_if_promoted(
+            runtime_root=effective_runtime_root(self.registry_path, None), goal_id=goal_id)
         return _digest(
             {
                 "registry": self._registry_fingerprint(),
+                "provider_revision": canonical.get("provider_revision") if canonical else None,
                 "goal_id": goal_id,
                 "active_state": state_digest,
                 "intent_basis": steward_team_plan_intent_basis(
@@ -1019,41 +1024,34 @@ class ChatActionService(
     ) -> dict[str, Any]:
         """Create each ready lane's first bounded Todo through the Todo owner."""
 
-        from .control_plane.work_items.governed_transition_proposal import (
-            GovernedTransitionSettlementPhase,
-            settle_governed_transition_proposals,
-        )
+        from .control_plane.work_items.team_plan_adapter import apply_team_plan
 
         goal_id = str(parameters["goal_id"])
         plan = parameters.get("plan")
         if not isinstance(plan, Mapping):
             raise ValueError("team plan proposal is malformed")
-        # The preview bound this Goal's registration facts, its active-state
-        # intent and the canonical basis its lanes would advance; re-read them
-        # here so a plan confirmed against one objective cannot become work
-        # under another, and so a registry change still asks for confirmation.
-        current_fingerprint = self._team_plan_state_fingerprint(goal_id, plan)
-        if current_fingerprint != proposal.get("expected_state_fingerprint"):
-            stale = self.store.apply(
-                proposal_id,
-                current_state_fingerprint=current_fingerprint,
-                receipt={},
+        expected = str(proposal.get("expected_state_fingerprint") or "")
+        try:
+            settlement = apply_team_plan(
+                registry_path=self.registry_path, goal_id=goal_id,
+                agent_id=None, proposal={**dict(plan), "proposal_id": proposal_id},
+                expected_state_fingerprint=expected,
+                read_fingerprint=lambda: self._team_plan_state_fingerprint(goal_id, plan),
             )
-            return {"proposal": stale, "turn": None}
-        # The governed transition owner re-validates the plan with the host's own
-        # facts and owns the settlement phase, so this action never becomes a
-        # second writer of lanes.
-        settlements = settle_governed_transition_proposals(
-            registry_path=self.registry_path,
-            goal_id=goal_id,
-            agent_id=str(parameters.get("requested_by") or "owner"),
-            effect_id=proposal_id,
-            proposals=[{**dict(plan), "proposal_id": proposal_id}],
-            existing_receipts=[],
-            checkpoint=lambda _receipts: None,
-            phase=GovernedTransitionSettlementPhase.PRE_SETTLEMENT,
-        )
-        settlement = settlements[0]
+        except (OSError, ValueError, RuntimeError) as error:
+            error_code = getattr(error, "diagnostic_code", None) or getattr(error, "code", None)
+            observed = getattr(error, "current_fingerprint", None)
+            if error_code == "team_plan_preview_stale" and observed and observed != expected:
+                stale = self.store.apply(proposal_id,
+                    current_state_fingerprint=observed, receipt={})
+                return {"proposal": stale, "turn": None}
+            return {"proposal": self.store.mark_failed(proposal_id,
+                error_code=("team_plan_projection_pending" if error_code == "team_plan_projection_pending" else "team_plan_commit_failed"),
+                message=("Tasks committed; display readback is pending. Retry this same plan to recover the result."
+                         if error_code == "team_plan_projection_pending" else
+                         "The batch could not be confirmed. Retry this same plan to recover its commit result.")),
+                "turn": None}
+        current_fingerprint = expected
         lane_todo_ids = [str(item) for item in (settlement.get("lane_todo_ids") or [])]
         intent_basis = str(settlement.get("intent_basis") or "")
         gap_count = int(settlement.get("gap_count") or 0)
@@ -1076,41 +1074,10 @@ class ChatActionService(
                 ),
                 "turn": None,
             }
-        # The outcome is read from what the settlement actually produced, not
-        # from "the action was not a creation": a plan that created lanes beside
-        # a gap is a partial application, and reporting it as a full success
-        # told the owner the commitment was kept when part of it was not.
-        lane_failure = settlement.get("lane_failure")
-        if lane_failure:
-            # A lane failed after earlier lanes were written. The plan did not
-            # apply, so it is not reported as applied; the identities that do
-            # exist are recorded with the failure so the retry reconciles
-            # against them instead of creating a second copy of the same lane.
-            return {
-                "proposal": self.store.mark_failed(
-                    proposal_id,
-                    error_code="team_plan_lane_write_failed",
-                    message=(
-                        f"lane {lane_failure['lane_id']} could not be created; "
-                        f"{len(lane_todo_ids)} lane Todo(s) from this plan already exist"
-                    ),
-                    details={
-                        "goal_id": goal_id,
-                        "lane_todo_ids": lane_todo_ids,
-                        "lane_settlements": [
-                            dict(item)
-                            for item in (settlement.get("lane_settlements") or [])
-                        ],
-                        "failed_lane_id": str(lane_failure["lane_id"]),
-                        "failed_lane_reason_code": str(
-                            lane_failure["reason_code"]
-                        ),
-                    },
-                ),
-                "turn": None,
-            }
+        # Recovery describes this attempt; original staffing gaps remain in the
+        # receipt so readback never implies that retry created the missing work.
         if str(settlement.get("action") or "") == "reused":
-            outcome = "team_plan_lanes_already_present"
+            outcome = "team_plan_commit_recovered"
         elif gap_count:
             outcome = "team_plan_partially_applied"
         else:
@@ -1139,6 +1106,7 @@ class ChatActionService(
             receipt["lanes"] = [dict(item) for item in lane_settlements]
         if gap_count:
             receipt["gap_count"] = gap_count
+            receipt["gap_lanes"] = settlement.get("gap_lanes", [])
         if intent_basis:
             # The canonical revision these lanes were created against, so the
             # owner's readback can name what the work advances.

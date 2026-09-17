@@ -13,7 +13,7 @@ import {
   typedActionKindSchema,
   typedActionProposalSchema,
 } from "../src/data/chat.js";
-import { teamPlanFields, teamPlanGoalId, teamPlanLaneCount } from "../src/features/personal-workspace/team-plan-preview.js";
+import { teamPlanAssignments, teamPlanFields, teamPlanGapReason, teamPlanGoalId, teamPlanLaneCount, teamPlanReceiptGapLanes } from "../src/features/personal-workspace/team-plan-preview.js";
 
 const GOAL_ID = "team-plan-smoke-goal";
 
@@ -132,6 +132,10 @@ const translate = (key: string, values?: Record<string, string | number>) => {
     "proposal.teamPlan.acceptanceShort": "acceptance",
     "proposal.teamPlan.gapLane": "unstaffed",
     "proposal.teamPlan.laneUnstaffed": "staffing gap, no first Todo",
+    "proposal.teamPlan.appliedGapLane": "{lane} ({agent}) stayed unstaffed: {reason}",
+    "proposal.teamPlan.advisory": "planning context",
+    "proposal.teamPlan.gapReason.agentNotRegistered": "the Agent is not registered for this Goal",
+    "proposal.teamPlan.gapReason.actionKindNotSupported": "this host does not ship that action kind",
   };
   const template = table[key] ?? key;
   return Object.entries(values ?? {}).reduce(
@@ -153,19 +157,46 @@ check(
   "a ready lane shows its first bounded Todo, its priority and its acceptance signal",
 );
 check(
-  gapLane?.value.startsWith("unstaffed · agent_not_registered") === true
+  gapLane?.value.startsWith("unstaffed · the Agent is not registered for this Goal") === true
   && gapLane?.value.includes("Independently review the intake") === true,
   "a gap lane says it is unstaffed, names the reason and keeps the work it did not staff",
 );
-check(byKey.get("lane_gaps")?.value === "lane_review: agent_not_registered", "the gap summary joins lane and reason");
-check(byKey.get("quota_envelope")?.value === "slots: 4 · window: 1d", "the quota envelope is shown as data");
+check(!byKey.has("lane_gaps"), "the preview does not repeat a gap already shown with its task");
+check(byKey.get("quota_envelope")?.value === "slots: 4 · window: 1d · planning context", "quota is labeled as planning context");
 check(
-  byKey.get("stop_condition")?.value === "every lane reports a typed outcome or a stated gap",
+  byKey.get("stop_condition")?.value === "every lane reports a typed outcome or a stated gap · planning context",
   "the stop condition is shown",
 );
 check(
   fields.some((field) => field.value.includes("agent-") === true && field.value.includes("ready") === true) === false,
   "the card never renders a lane as already created",
+);
+
+// Confirming the plan replaces the preview facts with the apply receipt, so
+// the readback has to carry the same lane identity: a partial application that
+// reported only a count left the owner unable to name what was missing.
+const partialReceipt = {
+  outcome: "team_plan_partially_applied",
+  gap_count: 1,
+  gap_lanes: [
+    { lane_id: "lane_review", agent_id: "agent-reviewer", reason_code: "agent_not_registered" },
+  ],
+};
+const appliedGaps = teamPlanReceiptGapLanes(partialReceipt, { plan });
+check(appliedGaps[0].task === "Independently review the intake", "pending work keeps the admitted task label");
+const assignments = teamPlanAssignments({ lanes: [{ lane_id: "lane_backend", agent_id: "receipt-owner" }] }, { plan });
+check(assignments.length === 1 && assignments[0].agentId === "receipt-owner" && assignments[0].task === "Implement the bounded intake", "only receipted tasks are assigned; the receipt owns the assignee");
+check(teamPlanAssignments(null, { plan }).length === 0, "the preview alone never establishes assignment");
+check(appliedGaps.length === 1 && appliedGaps[0].laneId === "lane_review", "the apply receipt names the lane that stayed unstaffed");
+check(teamPlanGapReason("future_reason", translate as never) === "future_reason", "unknown host reasons stay explicit");
+check(
+  teamPlanReceiptGapLanes({ outcome: "team_plan_applied" }).length === 0,
+  "a plan that staffed every lane reports no gap lanes",
+);
+check(
+  teamPlanReceiptGapLanes(null).length === 0
+  && teamPlanReceiptGapLanes({ gap_lanes: [{ agent_id: "agent-reviewer" }] }).length === 0,
+  "a receipt without the field, or without a lane, reports no gap lanes",
 );
 
 if (process.exitCode !== 1) console.log("team plan proposal smoke ok");

@@ -21,7 +21,6 @@ from ..runtime.public_safety import validate_public_safe_value
 from ..todos.contract import (
     TODO_STATUS_DONE,
     TODO_STATUS_OPEN,
-    TODO_TASK_CLASS_ADVANCEMENT,
     TODO_TASK_CLASS_MONITOR,
     normalize_todo_capability_binding_ref,
 )
@@ -53,6 +52,7 @@ _OPTIONAL_RECEIPT_FIELDS = {
     "lane_settlements",
     "gap_count",
     "lane_failure",
+    "gap_lanes",
 }
 _LANE_TODO_ID_LIMIT = 8
 _LANE_TODO_ID = re.compile(r"^todo_[A-Za-z0-9]{1,40}$")
@@ -192,6 +192,19 @@ def validate_governed_transition_receipts(
             or not 1 <= gap_count <= STEWARD_TEAM_PLAN_LANE_LIMIT
         ):
             raise ValueError("governed transition proposal receipt gap_count is invalid")
+        gap_lanes = receipt.get("gap_lanes")
+        if gap_lanes is not None:
+            if not isinstance(gap_lanes, list) or len(gap_lanes) != gap_count:
+                raise ValueError("governed transition gap_lanes count is invalid")
+            seen_gaps: set[str] = set()
+            for gap in gap_lanes:
+                if (not isinstance(gap, dict)
+                    or set(gap) != {"lane_id", "agent_id", "reason_code"}
+                    or not all(isinstance(value, str) and value for value in gap.values())
+                    or gap["lane_id"] in seen_gaps
+                    or gap["reason_code"] not in STEWARD_TEAM_PLAN_GAP_REASONS + STEWARD_TEAM_PLAN_HOST_GAP_REASONS):
+                    raise ValueError("governed transition gap_lanes is invalid")
+                seen_gaps.add(gap["lane_id"])
         lane_failure = receipt.get("lane_failure")
         if lane_failure is not None:
             failure = _mapping(lane_failure, "governed transition lane failure")
@@ -423,150 +436,18 @@ def steward_team_plan_intent_basis(
     )
 
 
-def _lane_todo_text(text: str, priority: str) -> str:
-    """Give a lane's first Todo the priority the owner confirmed.
-
-    LoopX expresses a Todo's priority through the label the canonical Todo
-    readers parse, so a confirmed lane carries it in its own text rather than in
-    a second field no reader owns. A lane whose text already declares a
-    priority keeps it: the plan the owner reviewed wins, and re-reading a
-    preview cannot stack two labels on one row.
-    """
-
-    from ..todos.text import normalize_new_todo, todo_priority_prefix
-
-    normalized = normalize_new_todo(text)
-    if todo_priority_prefix(normalized):
-        return normalized
-    return f"[{priority}] {normalized}"
-
-
 def _apply_team_plan(
-    *,
-    registry_path: Path,
-    goal_id: str,
-    agent_id: str,
+    *, registry_path: Path, goal_id: str, agent_id: str,
     proposal: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Create the confirmed lanes' first bounded Todos through the Todo owner.
+    from .team_plan_adapter import apply_team_plan
+    from ..effect_runtime import EffectRuntimeRejected
 
-   The plan is re-validated here against this Goal's registered Agents and the
-   shipped advancement action kinds, so a proposal cannot become work by
-   bypassing admission. Only lanes the preview already marked ready are
-   materialized; a lane the preview reported as a gap stays a gap and creates
-   nothing, and the canonical Todo owner decides whether a row is added or
-   reused, which makes a replayed settlement idempotent.
-   """
-
-    from ...agent_registry import registered_agent_ids_for_goal
-    from ...history import load_registry
-    from ...registry import registry_goals
-    from ..todos.contract import TODO_ACTION_KIND_ADVANCEMENT_VALUES
-
-    # The plan names the Goal it staffs, and it may not be retargeted by the
-    # settlement it arrives in: admitting a plan against one Goal's agents and
-    # then creating its lanes under another would be a silent widening.
-    if str(proposal.get("goal_id") or "") != goal_id:
-        raise ValueError(
-            "steward team plan proposal names a different Goal than its settlement"
-        )
-    registry = load_registry(registry_path)
-    goal = next(
-        (
-            item
-            for item in registry_goals(registry)
-            if str(item.get("id") or "") == goal_id
-        ),
-        None,
-    )
-    if goal is None:
-        raise ValueError("steward team plan proposal names an unknown Goal")
-    preview = validate_steward_team_plan_preview(
-        proposal,
-        registered_agent_ids=registered_agent_ids_for_goal(goal),
-        supported_action_kinds=sorted(TODO_ACTION_KIND_ADVANCEMENT_VALUES),
-    )
-    # Traceability is read before the edit: the receipt names the canonical
-    # basis this work-graph edit was applied against, so the lanes could not
-    # make the basis describe their own creation. A Goal whose basis cannot be
-    # read omits the field instead of inventing one.
-    intent_basis = _intent_basis_for(goal_id=goal_id, goal=goal, registry_path=registry_path, preview=preview)
-    created: list[str] = []
-    reused: list[str] = []
-    lane_settlements: list[dict[str, str]] = []
-    lane_failure: dict[str, str] | None = None
-    for lane in preview["lanes"]:
-        if lane.get("staffing") != "ready":
-            continue
-        first_todo = lane["first_todo"]
-        priority = str(first_todo["priority"])
-        try:
-            result = add_goal_todo(
-                registry_path=Path(registry_path).expanduser(),
-                goal_id=goal_id,
-                role="agent",
-                text=_lane_todo_text(str(first_todo["text"]), priority),
-                status=TODO_STATUS_OPEN,
-                task_class=TODO_TASK_CLASS_ADVANCEMENT,
-                action_kind=str(first_todo["action_kind"]),
-                claimed_by=str(lane["agent_id"]),
-                agent_id=str(lane["agent_id"]),
-            )
-        except (OSError, ValueError, TypeError, KeyError, RuntimeError):
-            # Each lane is written by the canonical Todo owner under its own
-            # lock, so a multi-lane plan is a recoverable workflow rather than
-            # one atomic transaction: by the time a later lane fails, the
-            # earlier lanes are real work that must not be reported as a plan
-            # that applied, and must not be created twice by the retry. The
-            # failure is therefore returned with the identities that exist, and
-            # a plan that committed nothing at all is still an error.
-            if not lane_settlements:
-                raise
-            lane_failure = {
-                "lane_id": str(lane["lane_id"]),
-                "reason_code": "lane_write_failed",
-            }
-            break
-        todo_id = str(result["todo_id"])
-        if result.get("added"):
-            created.append(todo_id)
-        else:
-            reused.append(todo_id)
-        # The acceptance a lane was confirmed to end on is retained beside the
-        # Todo identity it became, so the commitment survives the answer.
-        lane_settlements.append(
-            {
-                "lane_id": str(lane["lane_id"]),
-                "agent_id": str(lane["agent_id"]),
-                "priority": priority,
-                "disposition": "created" if result.get("added") else "reused",
-                "todo_id": todo_id,
-                "acceptance": str(lane["acceptance"]),
-            }
-        )
-    # The receipt names every lane Todo this settlement ensured, whether the
-    # canonical owner added it or found it already present, so a replayed
-    # settlement still reports the same identities instead of an empty one.
-    lane_todo_ids = [*created, *reused]
-    return {
-        # A plan that staffed no lane is neither a creation nor a reuse, and
-        # saying "reused" for it is what let an empty confirmation read as
-        # success. The three outcomes stay distinct.
-        "action": (
-            "partially_created"
-            if lane_failure
-            else "created" if created else ("reused" if reused else "unstaffed")
-        ),
-        "todo_id": lane_todo_ids[0] if lane_todo_ids else "",
-        "target_key": None,
-        "created_todo_ids": created,
-        "lane_todo_ids": lane_todo_ids,
-        "lane_settlements": lane_settlements,
-        "lane_failure": lane_failure,
-        "intent_basis": intent_basis,
-        "reused_lane_count": len(reused),
-        "gap_count": len(preview["gaps"]),
-    }
+    try:
+        return apply_team_plan(registry_path=registry_path, goal_id=goal_id,
+                               agent_id=agent_id, proposal=proposal)
+    except EffectRuntimeRejected as error:
+        raise ValueError(str(error)) from None
 
 
 def _complete_monitor(
@@ -706,6 +587,8 @@ def settle_governed_transition_proposals(
             # partial application, and the reader has to be able to tell
             # without re-deriving the plan.
             receipt["gap_count"] = int(gap_count)
+        if result.get("gap_lanes"):
+            receipt["gap_lanes"] = result["gap_lanes"]
         lane_failure = result.get("lane_failure")
         if lane_failure:
             # The lanes that exist are named beside the lane that could not be
@@ -755,241 +638,20 @@ def _plan_text(value: object, label: str) -> str:
     return text
 
 
-def _unstaffed_lane(
-    *,
-    lane_id: str,
-    agent_id: str,
-    acceptance: str,
-    reason_code: str,
-    first_todo: Mapping[str, Any] | None = None,
-    note: str | None = None,
-) -> dict[str, Any]:
-    """One lane this host cannot staff, keeping the work it declined.
-
-    A gap lane names the lane, the Agent it was asked to run on, the acceptance
-    signal it was meant to end on, and the typed reason it is not staffed. It
-    carries no ``first_todo``: the work it did not staff is evidence, not a lane
-    that exists, and it is kept either as the declined first Todo or as the note
-    the plan gave for the lane. One of the two is always present, so a reader can
-    always see why the lane is a gap instead of finding an unexplained one.
-    """
-
-    lane = {
-        "lane_id": lane_id,
-        "agent_id": agent_id,
-        "acceptance": acceptance,
-        "staffing": "gap",
-        "gap_reason_code": reason_code,
-    }
-    if first_todo is not None:
-        lane["declined_first_todo"] = dict(first_todo)
-    if note is not None:
-        lane["gap_note"] = note
-    return lane
-
-
-def _declined_todo(value: object) -> dict[str, Any]:
-    """Read the work a gap lane kept, without judging whether it can run.
-
-    The work a lane declined is evidence of what the owner asked for, so it is
-    bounded for public safety but not held to the staffability rules a lane that
-    will actually run must pass: the whole reason it is kept is that this host
-    could not staff it, and re-reading it must not turn an admitted gap back
-    into work.
-    """
-
-    declined = _mapping(value, "declined_first_todo")
-    priority = str(declined.get("priority") or "")
-    if priority not in STEWARD_TEAM_PLAN_PRIORITIES:
-        raise ValueError("declined_first_todo priority is invalid")
-    task_class = str(declined.get("task_class") or "")
-    if task_class != "advancement_task":
-        raise ValueError(
-            "a lane's declined first bounded Todo must be an advancement_task"
-        )
-    return {
-        "text": _plan_text(declined.get("text"), "declined_first_todo text"),
-        "priority": priority,
-        "task_class": task_class,
-        "action_kind": _plan_text(
-            declined.get("action_kind"), "declined_first_todo action_kind"
-        ),
-    }
-
-
 def validate_steward_team_plan_preview(
-    payload: object,
-    *,
-    registered_agent_ids: Sequence[str],
+    payload: object, *, registered_agent_ids: Sequence[str],
     supported_action_kinds: Sequence[str],
 ) -> dict[str, Any]:
-    """Validate one steward team preview, and refuse to invent its staffing.
+    """Public-safety adapter; the typed work-items owner admits the preview."""
+    from ..effect_runtime import EffectRuntimeRejected, effect_runtime_result
 
-    Validation is the same contract at both ends: the Chat admission uses it to
-    decide whether a preview may be surfaced for confirmation, and the
-    ``PRE_SETTLEMENT`` apply of that kind calls it again with the host's own
-    facts before it creates anything, so a proposal cannot become work by
-    bypassing admission. A lane whose Agent this Goal does not register becomes
-    a typed gap that keeps the work it did *not* staff under
-    ``declined_first_todo``, so the owner sees what was asked for and what is
-    missing instead of a lane that was quietly filled in or dropped.
-
-    The same holds for an action kind this host does not ship: it is a fact
-    about one lane's staffability, not a malformed plan, so that lane becomes a
-    typed gap and the plan is still admitted with its other lanes ready. Only a
-    payload the host cannot read at all -- a wrong schema, an unstaffable
-    plan-level field, or a lane that omits the Todo shape -- is refused whole.
-    """
-
-    plan = _mapping(payload, "steward_team_plan_preview")
-    if plan.get("schema_version") != STEWARD_TEAM_PLAN_PREVIEW_SCHEMA_VERSION:
-        raise ValueError("steward team plan preview schema_version is invalid")
-    if plan.get("kind") != STEWARD_TEAM_PLAN_PREVIEW_KIND:
-        raise ValueError("steward team plan preview kind is invalid")
-    # The plan names the Goal it staffs. Without that, the admission that
-    # validates its lanes and the settlement that materializes them would each
-    # have to guess which Goal's agents the host should describe, and a plan
-    # could be admitted against one Goal's facts and applied under another's.
-    goal_id = _plan_text(plan.get("goal_id"), "goal_id")
-    if not _GOAL_ID.fullmatch(goal_id):
-        raise ValueError("steward team plan preview requires an exact Goal id")
-    registered = {str(value) for value in registered_agent_ids}
-    action_kinds = {str(value) for value in supported_action_kinds}
-    lanes_value = plan.get("lanes")
-    if not isinstance(lanes_value, Sequence) or isinstance(lanes_value, (str, bytes)):
-        raise ValueError("steward team plan preview requires a lane list")
-    if not 1 <= len(lanes_value) <= STEWARD_TEAM_PLAN_LANE_LIMIT:
-        raise ValueError(
-            f"steward team plan preview requires 1..{STEWARD_TEAM_PLAN_LANE_LIMIT} lanes"
-        )
-    lanes: list[dict[str, Any]] = []
-    gaps: list[dict[str, str]] = []
-    seen_lanes: set[str] = set()
-    for raw_lane in lanes_value:
-        lane = _mapping(raw_lane, "steward_team_plan_lane")
-        lane_id = _plan_text(lane.get("lane_id"), "lane_id")
-        if lane_id in seen_lanes:
-            raise ValueError("steward team plan preview repeats a lane_id")
-        seen_lanes.add(lane_id)
-        agent_id = _plan_text(lane.get("agent_id"), "agent_id")
-        acceptance = _plan_text(lane.get("acceptance"), "lane acceptance")
-        declared_gap = lane.get("staffing_gap")
-        requested_todo = lane.get("first_todo")
-        if declared_gap is not None:
-            gap = _mapping(declared_gap, "staffing_gap")
-            reason_code = str(gap.get("reason_code") or "")
-            if reason_code not in STEWARD_TEAM_PLAN_GAP_REASONS:
-                raise ValueError("staffing_gap reason_code is invalid")
-            if requested_todo is not None:
-                raise ValueError("a lane that declares a gap may not declare work")
-            lanes.append(
-                _unstaffed_lane(
-                    lane_id=lane_id,
-                    agent_id=agent_id,
-                    acceptance=acceptance,
-                    reason_code=reason_code,
-                    note=_plan_text(gap.get("note"), "staffing_gap note"),
-                )
-            )
-            gaps.append({"lane_id": lane_id, "reason_code": reason_code})
-            continue
-        if requested_todo is None:
-            # A lane that arrives without work is a verdict somebody already
-            # made: this host's own, when an admitted preview is re-read by the
-            # apply, or the plan's, handled above. It is preserved rather than
-            # re-derived, so validation is idempotent and an apply cannot staff a
-            # lane the owner was shown as unstaffed.
-            reason_code = str(lane.get("gap_reason_code") or "")
-            if reason_code not in (
-                STEWARD_TEAM_PLAN_GAP_REASONS + STEWARD_TEAM_PLAN_HOST_GAP_REASONS
-            ):
-                raise ValueError("lane gap_reason_code is invalid")
-            declined = lane.get("declined_first_todo")
-            note = lane.get("gap_note")
-            if declined is None and note is None:
-                raise ValueError("a lane without work must keep why it is a gap")
-            lanes.append(
-                _unstaffed_lane(
-                    lane_id=lane_id,
-                    agent_id=agent_id,
-                    acceptance=acceptance,
-                    reason_code=reason_code,
-                    first_todo=(
-                        _declined_todo(declined) if declined is not None else None
-                    ),
-                    note=(
-                        _plan_text(note, "gap_note") if note is not None else None
-                    ),
-                )
-            )
-            gaps.append({"lane_id": lane_id, "reason_code": reason_code})
-            continue
-        first_todo = _mapping(requested_todo, "first_todo")
-        text = _plan_text(first_todo.get("text"), "first_todo text")
-        priority = str(first_todo.get("priority") or "")
-        if priority not in STEWARD_TEAM_PLAN_PRIORITIES:
-            raise ValueError("first_todo priority is invalid")
-        task_class = str(first_todo.get("task_class") or "")
-        if task_class != "advancement_task":
-            raise ValueError("a lane's first bounded Todo must be an advancement_task")
-        action_kind = str(first_todo.get("action_kind") or "")
-        normalized_todo = {
-            "text": text,
-            "priority": priority,
-            "task_class": task_class,
-            "action_kind": action_kind,
-        }
-        # Two different host facts make one lane unstaffable: this Goal does not
-        # register its Agent, or this host does not ship the action kind it asked
-        # for. Both are staffability facts about *one* lane, so both become the
-        # same typed gap and keep the declined work. Neither may refuse the plan:
-        # a plan whose first lane cannot be staffed is still the owner's request,
-        # and its staffable lanes are exactly what the owner asked to review.
-        # Before this, an unsupported kind raised, so Chat admission dropped the
-        # whole plan and the owner saw correct prose with nothing to confirm.
-        if agent_id not in registered:
-            lane_gap_reason = "agent_not_registered"
-        elif action_kind not in action_kinds:
-            lane_gap_reason = STEWARD_TEAM_PLAN_UNSUPPORTED_ACTION_KIND
-        else:
-            lane_gap_reason = ""
-        if lane_gap_reason:
-            lanes.append(
-                _unstaffed_lane(
-                    lane_id=lane_id,
-                    agent_id=agent_id,
-                    acceptance=acceptance,
-                    reason_code=lane_gap_reason,
-                    first_todo=normalized_todo,
-                )
-            )
-            gaps.append({"lane_id": lane_id, "reason_code": lane_gap_reason})
-            continue
-        lanes.append(
-            {
-                "lane_id": lane_id,
-                "agent_id": agent_id,
-                "acceptance": acceptance,
-                "staffing": "ready",
-                "first_todo": normalized_todo,
-            }
-        )
-    envelope = _mapping(plan.get("quota_envelope"), "quota_envelope")
-    if not envelope:
-        raise ValueError("steward team plan preview requires a quota envelope")
-    validate_public_safe_value(envelope, path="quota_envelope")
-    preview = {
-        "schema_version": STEWARD_TEAM_PLAN_PREVIEW_SCHEMA_VERSION,
-        "kind": STEWARD_TEAM_PLAN_PREVIEW_KIND,
-        "goal_id": goal_id,
-        "objective": _plan_text(plan.get("objective"), "objective"),
-        "lanes": lanes,
-        "gaps": gaps,
-        "quota_envelope": dict(envelope),
-        "stop_condition": _plan_text(plan.get("stop_condition"), "stop_condition"),
-        # A preview is never an effect: the contract states it, so a reader does
-        # not have to know which materializers happen to be registered.
-        "applies": False,
-    }
-    validate_public_safe_value(preview, path="steward_team_plan_preview")
-    return preview
+    validate_public_safe_value(payload, path="steward_team_plan_preview")
+    try:
+        result = effect_runtime_result("work_items.team_plan.preview", {
+            "plan": payload, "registered_agents": list(registered_agent_ids),
+            "supported_action_kinds": list(supported_action_kinds),
+        })
+    except EffectRuntimeRejected as error:
+        raise ValueError(str(error)) from None
+    validate_public_safe_value(result, path="steward_team_plan_preview")
+    return dict(result)

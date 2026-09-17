@@ -1,3 +1,4 @@
+import type { TeamPlanAppliedOutcome } from "./team-plan-preview";
 import type { ActionReviewPlan } from "../../../../../../loopx/control_plane/presentation/action_review_plan.js";
 import type { GoalAcceptanceObservation } from "../../data/goal-acceptance-observation";
 import type { AttentionDetails } from "./attention-details";
@@ -232,6 +233,12 @@ export type WorkspaceActionPreview = {
   primaryLabel?: string;
   errorMessage?: string;
   status: "draft" | "ready" | "applying" | "applied" | "gated" | "stale" | "error" | "rejected" | "deferred";
+  // The lanes a confirmed team plan left unstaffed, read from the apply
+  // receipt so the card can name them after the confirmation, not only in the
+  // preview that the confirmation replaced.
+  teamPlanOutcome?: TeamPlanAppliedOutcome;
+  teamPlanAssignments?: Array<{ laneId: string; agentId: string; task: string }>;
+  teamPlanGapLanes?: Array<{ laneId: string; agentId: string; reasonCode: string; task?: string }>;
   title: string;
   sourceRequest?: WorkspaceActionPreviewRequest;
   workspaceCandidates?: Array<{ label: string; workspaceRef: string }>;

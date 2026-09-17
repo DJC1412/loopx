@@ -242,7 +242,7 @@ def test_a_plan_cannot_be_retargeted_to_another_goal(tmp_path: Path) -> None:
 def _second_lane() -> dict:
     return {
         "lane_id": "lane-beta",
-        "agent_id": "agent-beta",
+        "agent_id": AGENT_ID,
         "acceptance": "The second lane's first Todo is delivered with evidence",
         "first_todo": {
             "text": "Read back the second lane's bounded first turn",
@@ -475,54 +475,16 @@ def test_a_plan_that_can_staff_no_lane_reports_that_instead_of_reuse(
     assert "loopx:todo " not in _todos(project)
 
 
-def test_a_lane_failure_after_earlier_lanes_returns_a_typed_partial(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The settlement reports the lanes that exist beside the one that failed.
-
-    A plan is a recoverable workflow: the lanes already written are real work,
-    so the settlement neither raises away their identities nor claims the plan
-    applied, and the receipt validates with the failure recorded.
-    """
-
-    from loopx.control_plane.work_items import governed_transition_proposal
-
-    project, registry_path = _fixture(tmp_path)
-    real = governed_transition_proposal.add_goal_todo
-
-    def guarded(**kwargs: object) -> dict:
-        if kwargs.get("text") == "[P1] Work that cannot be written":
-            raise OSError("simulated lane write failure")
-        return real(**kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(governed_transition_proposal, "add_goal_todo", guarded)
-    plan = _proposal(
-        extra_lane={
-            "lane_id": "lane-beta",
-            "agent_id": AGENT_ID,
-            "acceptance": "Never reached",
-            "first_todo": {
-                "text": "Work that cannot be written",
-                "priority": "P1",
-                "task_class": "advancement_task",
-                "action_kind": "implement",
-            },
-        }
-    )
-
-    receipts = _settle(registry_path, plan)
-
-    assert receipts[0]["action"] == "partially_created"
-    assert receipts[0]["lane_failure"] == {
-        "lane_id": "lane-beta",
-        "reason_code": "lane_write_failed",
-    }
-    assert [item["lane_id"] for item in receipts[0]["lane_settlements"]] == [
-        "lane-alpha"
-    ]
-    assert receipts[0]["todo_id"] == receipts[0]["lane_todo_ids"][0]
-    assert validate_governed_transition_receipts(receipts) == receipts
-    assert _todos(project).count("loopx:todo ") == 1
+def test_batch_write_failure_leaves_every_lane_unwritten(tmp_path: Path, monkeypatch) -> None:
+    from loopx.control_plane.work_items import team_plan_adapter
+    project, registry_path = _fixture(tmp_path, agents=(AGENT_ID, "agent-beta"))
+    before = _todos(project)
+    def fail(*args, **kwargs):
+        raise OSError("batch write unavailable")
+    monkeypatch.setattr(team_plan_adapter, "write_captured_todo_state", fail)
+    with pytest.raises(OSError, match="batch write unavailable"):
+        _settle(registry_path, _proposal(extra_lane=_second_lane()))
+    assert _todos(project) == before
 
 
 def test_a_lane_failure_receipt_must_use_the_typed_vocabulary() -> None:
