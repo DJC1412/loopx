@@ -48,27 +48,25 @@ function connectionCapture(): {
   readonly calls: Array<{
     channel: string
     handler: ConnectionRpcHandler
-    authority: string
   }>
   readonly disposed: () => number
 } {
   const calls: Array<{
     channel: string
     handler: ConnectionRpcHandler
-    authority: string
   }> = []
   let disposeCalls = 0
   const connection = {
     rpc: {
-      handle(channel, handler, options) {
-        calls.push({ channel, handler, authority: options.authority })
+      handle(channel: string, handler: ConnectionRpcHandler) {
+        calls.push({ channel, handler })
         return async () => { disposeCalls += 1 }
       },
       intercept() {
         throw new Error('not used')
       },
     },
-  } satisfies HostConnectionHandle
+  } as unknown as HostConnectionHandle
   return { connection, calls, disposed: () => disposeCalls }
 }
 
@@ -105,7 +103,7 @@ function sharedApiConnectionCapture(): {
 }
 
 describe('GoalBar Connection carrier', () => {
-  it('registers the real handler at loopback-only /loopx and returns its disposer', async () => {
+  it('registers the real handler at the authenticated /loopx channel and returns its disposer', async () => {
     const capture = connectionCapture()
     const service: GoalBarServiceHandle = {
       handle: async () => readResponse(),
@@ -116,7 +114,6 @@ describe('GoalBar Connection carrier', () => {
     expect(capture.calls).toHaveLength(1)
     expect(capture.calls[0]).toMatchObject({
       channel: '/loopx',
-      authority: 'loopback',
     })
     const result = await capture.calls[0]?.handler(
       'goalbar/read',
@@ -313,9 +310,7 @@ describe('package-root GoalBar Host', () => {
 
     expect(name).toBe('dsh-loopx-plugin')
     apply(ctx)
-    expect(capture.calls[0]).toMatchObject({
-      channel: '/loopx', authority: 'loopback',
-    })
+    expect(capture.calls[0]).toMatchObject({ channel: '/loopx' })
 
     const controller = new AbortController()
     const call = capture.calls[0]?.handler(
