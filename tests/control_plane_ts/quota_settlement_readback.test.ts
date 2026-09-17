@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { appendFile, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -50,6 +57,12 @@ test("semantic replan guard distinguishes legacy, none, and exact selection", ()
 
 async function fixture(options: {
   guard?: boolean;
+  /**
+   * Commit the same-turn guard receipt the way the documented wake order does:
+   * the guard runs before a work item is chosen, so the receipt exists for this
+   * turn but carries no settlement binding.
+   */
+  guardUnbound?: boolean;
   writeback?: boolean;
   spend?: boolean;
   completion?: boolean;
@@ -73,8 +86,12 @@ async function fixture(options: {
       agent_id: agentId,
       run_id: turnId,
       details: {
-        todo_id: todoId,
-        settlement_effect_id: identity.effect_id,
+        ...(options.guardUnbound
+          ? {}
+          : {
+            todo_id: todoId,
+            settlement_effect_id: identity.effect_id,
+          }),
         ...(options.workspace
           ? {
             delivery_workspace_causality_schema_version:
@@ -260,6 +277,68 @@ test("keeps partial settlement fail-closed without losing durable facts", async 
   assert.equal(result.monitor_phase, "settlement_pending");
   assert.equal(result.replay_phase, "open");
   assert.equal((result.writeback_run as any).delivery_outcome, "outcome_progress");
+});
+
+test("names the unbound same-turn receipt and the repair instead of a mismatch", async () => {
+  // The documented wake order runs the guard before any work item is chosen, so
+  // the turn's receipt exists with no settlement binding. This read model never
+  // binds one (the guard's same-turn reconciliation owns that, so there is one
+  // binder), which means the caller has to be told the state and the exact
+  // repair rather than the binding mismatch a "receipt todo=missing" message
+  // reports.
+  const runtimeRoot = await fixture({ guardUnbound: true });
+
+  const result = await readQuotaSettlement(request(runtimeRoot));
+
+  const failure = (result.settlement as any).result.failure;
+  assert.equal(failure.kind, "identity_mismatch");
+  assert.match(failure.reason, /carries no settlement binding yet/);
+  assert.match(
+    failure.reason,
+    new RegExp(
+      `quota should-run --turn-instance-id ${turnId} --todo-id ${todoId}`,
+    ),
+  );
+  assert.deepEqual(failure.details, {
+    binding_kind: "unbound",
+    requested_binding_kind: "todo",
+    turn_instance_id: turnId,
+  });
+});
+
+test("still reports a receipt bound to another work item as a mismatch", async () => {
+  // The unbound state must not swallow the case where the receipt was bound and
+  // the caller asked for something else: that is a real conflict, and its repair
+  // is not "bind it".
+  const runtimeRoot = await fixture({});
+  const eventsPath = join(
+    runtimeRoot,
+    "goals",
+    goalId,
+    "rollout-event-log.jsonl",
+  );
+  const events = (await readFile(eventsPath, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  events[0].details.todo_id = "todo_other_work_item";
+  events[0].details.settlement_effect_id = settlementIdentity({
+    goal_id: goalId,
+    agent_id: agentId,
+    todo_id: "todo_other_work_item",
+    turn_instance_id: turnId,
+  }).effect_id;
+  await writeFile(
+    eventsPath,
+    `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+  );
+
+  const result = await readQuotaSettlement(request(runtimeRoot));
+
+  const failure = (result.settlement as any).result.failure;
+  assert.equal(failure.kind, "identity_mismatch");
+  assert.match(failure.reason, /receipt todo=todo_other_work_item/);
+  assert.equal(failure.details, undefined);
 });
 
 test("rejects non-ENOENT settlement readback I/O failures", async (t) => {

@@ -396,6 +396,13 @@ def heartbeat_receipt_view(
         )
         if workspace_causality:
             receipt["delivery_workspace_causality"] = workspace_causality
+    else:
+        # The documented wake order runs the guard before a work item is chosen,
+        # so a turn-scoped receipt can legitimately commit with no settlement
+        # binding. Saying so here is what keeps that receipt from reading as a
+        # finished guard: the caller otherwise discovers the debt only when the
+        # closeout cannot settle the turn and the work stays unaccounted.
+        receipt["settlement_binding_owed"] = True
     semantic_replan_obligation_id = (
         heartbeat_receipt_semantic_replan_obligation_id(event)
     )
