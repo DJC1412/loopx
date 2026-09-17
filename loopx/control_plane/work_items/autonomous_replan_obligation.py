@@ -30,11 +30,13 @@ REPLAN_NOVELTY_POLICY_SCHEMA_VERSION = "replan_evidence_delivery_policy_v0"
 TODO_LIFECYCLE_SETTLEMENT_RESOLUTION_MODE = "todo_lifecycle_settlement"
 REPLAN_NOVELTY_GUIDANCE = (
     " Use the host-projected coverage ledger and produce a typed semantic delta; "
-    "repeated observations cannot close replan. Two flags stay the agent's own "
-    "decision rather than part of the printed transition: add "
-    "`--delivery-workspace-path <delivery-worktree>` only when this Todo's "
-    "settlement requires a delivery workspace, and add "
-    "`--autonomous-replan-recorded` only once the bounded replan is recorded."
+    "repeated observations cannot close replan."
+)
+# The two flags a printed replan transition cannot carry itself. Kept as compact
+# machine codes because the agent-facing quota rows allow only tens of extra
+# characters per row, and prose here would exceed that budget.
+REPLAN_SETTLEMENT_FLAG_CONDITIONS = (
+    "workspace_path:todo_requires,replan_ack:after_replan_recorded"
 )
 
 
@@ -215,6 +217,7 @@ def ensure_replan_novelty_policy(
             str(normalized.get("recommended_action") or "run a bounded autonomous replan")
         )
         normalized["replan_novelty_policy"] = build_replan_novelty_policy()
+    normalized["settlement_flag_conditions"] = REPLAN_SETTLEMENT_FLAG_CONDITIONS
     rearmed_after_obligation_id = normalize_todo_replan_obligation_id(
         normalized.get("rearmed_after_obligation_id")
     )

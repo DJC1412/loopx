@@ -302,14 +302,13 @@ def assert_typed_repeat_requires_two_equivalent_observations() -> None:
         )
         # The printed transition stays minimal and always legal: the workspace
         # path is rejected for a non-delivery settlement and the replan ACK is
-        # the agent's own act, so both belong to the guidance instead of the
-        # command. The guidance still has to name both conditions, or an agent
-        # pays for them with a failed first attempt.
+        # the agent's own act. Both conditions are carried as compact codes
+        # beside the obligation instead of growing the agent-facing rows.
         assert "--autonomous-replan-recorded" not in replan_action, replan_action
         assert "--delivery-workspace-path" not in replan_action, replan_action
-        guidance = str(obligation["recommended_action"])
-        assert "--delivery-workspace-path <delivery-worktree>" in guidance, guidance
-        assert "--autonomous-replan-recorded" in guidance, guidance
+        assert obligation["settlement_flag_conditions"] == (
+            "workspace_path:todo_requires,replan_ack:after_replan_recorded"
+        ), obligation
 
 
 def assert_equivalent_observation_is_rejected_before_write() -> None:
