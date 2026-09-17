@@ -149,11 +149,7 @@ export function registerGoalBarConnectionRpc(
   connection: HostConnectionHandle,
   service: GoalBarServiceHandle,
 ): () => Promise<void> {
-  return connection.rpc.handle(
-    GOALBAR_RPC_CHANNEL,
-    createGoalBarConnectionHandler(service),
-    { authority: 'loopback' },
-  )
+  return connection.rpc.handle(GOALBAR_RPC_CHANNEL, createGoalBarConnectionHandler(service))
 }
 
 /**

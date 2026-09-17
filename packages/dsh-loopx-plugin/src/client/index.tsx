@@ -1,8 +1,12 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Brings the `slots` service seat on the client Context. The 0.1.5 line moved
+// it out of the retired `@deepseek-ai/dsh-client-runtime` into the renderer,
+// which is also the package this manifest lists in `dsh.client.inject` so the
+// provider's browser bundle is ordered ahead of this one.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 
 import { LoopXGoalBar } from './LoopXGoalBar.tsx'
 import { ensurePluginStyle } from './goalbar.module.css'
