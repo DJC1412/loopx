@@ -27,13 +27,16 @@ sys.path.insert(0, str(REPO_ROOT))
 from loopx.cli import main as cli_main  # noqa: E402
 from loopx.control_plane.turn_driver import executor as turn_executor  # noqa: E402
 from loopx.control_plane.turn_driver.host_binding import (  # noqa: E402
+    DSH_RUNTIME_MODULE,
     DSH_RUNTIME_UNAVAILABLE,
     EXECUTOR_KIND_INDIVIDUAL,
     EXECUTOR_KIND_MANAGED,
+    MANAGED_RUNTIME_PROBE_SCHEMA_VERSION,
     OPERATOR_CREDENTIAL_UNCONFIGURED,
     REMEDY_CONFIGURE_DSH_RUNTIME,
     REMEDY_CONFIGURE_OPERATOR_CREDENTIAL,
     REMEDY_SELECT_INDIVIDUAL_HOST,
+    RUNTIME_PROBE_SCOPE_INTERPRETER,
 )
 
 
@@ -41,6 +44,7 @@ GOAL_ID = "loopx-turn-managed-executor-fixture"
 AGENT_ID = "codex-managed-executor-fixture"
 TODO_ID = "todo_managedexec01"
 CREDENTIAL_ENV = "DEEPSEEK_API_KEY"
+CREDENTIAL_VALUE = "sk-fixture-operator"
 RUNTIME_MODULE = "deepseek_harness"
 
 
@@ -239,6 +243,29 @@ def _managed_binding(payload: dict[str, Any]) -> dict[str, Any]:
     return binding
 
 
+def _expect_probe(binding: dict[str, Any], *, available: bool) -> None:
+    """Pin the scope of the launchability verdict at the CLI boundary.
+
+    ``managed_executor_binding`` answers from the interpreter that probes, and
+    one machine can hold a service environment where the dsh SDK resolves and a
+    checkout environment where it does not. The verdict is only actionable when
+    the readback says which environment answered, so the public payload this
+    smoke reads has to carry it -- for the plan, for the fail-closed refusal,
+    and for every executor kind, so no reader branches on the field's absence.
+    """
+
+    probe = binding["runtime_probe"]
+    assert probe["schema_version"] == MANAGED_RUNTIME_PROBE_SCHEMA_VERSION, probe
+    assert probe["module"] == DSH_RUNTIME_MODULE, probe
+    assert probe["scope"] == RUNTIME_PROBE_SCOPE_INTERPRETER, probe
+    assert probe["available"] is available, probe
+    # This readback is carried into the Turn execution payload, so it stays
+    # public-safe: no absolute path and no credential value.
+    serialized = json.dumps(probe)
+    assert "/" not in serialized, serialized
+    assert CREDENTIAL_VALUE not in serialized, serialized
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(
         prefix="loopx-turn-managed-executor-"
@@ -254,9 +281,9 @@ def main() -> int:
         assert exit_code == 0, payload
         assert payload["host"]["kind"] == "codex-cli", payload
         uncredentialed_default = payload["managed_executor"]
-        assert (
-            uncredentialed_default["executor_kind"] == EXECUTOR_KIND_INDIVIDUAL
-        ), uncredentialed_default
+        assert uncredentialed_default["executor_kind"] == EXECUTOR_KIND_INDIVIDUAL, (
+            uncredentialed_default
+        )
         assert uncredentialed_default["operator_credential_bound"] is False, (
             uncredentialed_default
         )
@@ -264,7 +291,7 @@ def main() -> int:
 
         # 2. The credential resolves and authenticates the managed default.
         with (
-            _operator_credential("sk-fixture-operator"),
+            _operator_credential(CREDENTIAL_VALUE),
             _harness_runtime(available=True),
         ):
             exit_code, payload = _run_cli(_plan_command(registry, runtime, project))
@@ -274,11 +301,13 @@ def main() -> int:
         assert bound["credential_env"] == CREDENTIAL_ENV, bound
         assert bound["operator_credential_bound"] is True, bound
         assert bound["available"] is True, bound
+        _expect_probe(bound, available=True)
 
         # 3. With the runtime genuinely missing the same plan reports the other
-        #    typed reason rather than promising a launch.
+        #    typed reason rather than promising a launch, and the unchanged
+        #    verdict travels with the scope it was answered at.
         with (
-            _operator_credential("sk-fixture-operator"),
+            _operator_credential(CREDENTIAL_VALUE),
             _harness_runtime(available=False),
         ):
             exit_code, payload = _run_cli(_plan_command(registry, runtime, project))
@@ -286,11 +315,13 @@ def main() -> int:
         missing = _managed_binding(payload)
         assert missing["available"] is False, missing
         assert missing["unavailable_reason"] == DSH_RUNTIME_UNAVAILABLE, missing
+        _expect_probe(missing, available=False)
 
         # 4. An explicit individual host stays selected even while the operator
-        #    credential is configured, and makes no launch claim.
+        #    credential is configured, and makes no launch claim. It probes no
+        #    runtime, and the field is still present as an explicit ``None``.
         with (
-            _operator_credential("sk-fixture-operator"),
+            _operator_credential(CREDENTIAL_VALUE),
             _harness_runtime(available=True),
         ):
             exit_code, payload = _run_cli(
@@ -302,6 +333,7 @@ def main() -> int:
         assert individual["executor_kind"] == EXECUTOR_KIND_INDIVIDUAL, individual
         assert individual["available"] is None, individual
         assert individual["operator_credential_bound"] is False, individual
+        assert individual["runtime_probe"] is None, individual
 
         # 5. Executing an explicitly selected managed host without the
         #    credential fails closed: typed status, no host invocation, no
@@ -328,12 +360,16 @@ def main() -> int:
         ], refusal
         assert refusal["remediation_host"] == "codex-cli", refusal
         assert refusal["remediation_env_vars"] == [CREDENTIAL_ENV], refusal
+        # The operator reads the refusal, so the refusal is where the scope has
+        # to be visible: this environment answered "the credential is missing",
+        # not "the runtime is missing".
+        _expect_probe(refusal["managed_executor"], available=True)
         _expect_no_effects(refusal)
         _expect_no_journal(refusal, runtime)
 
         # 6. The same refusal covers a provably unlaunchable runtime.
         with (
-            _operator_credential("sk-fixture-operator"),
+            _operator_credential(CREDENTIAL_VALUE),
             _harness_runtime(available=False),
         ):
             exit_code, refusal = _run_cli(
@@ -353,6 +389,10 @@ def main() -> int:
             REMEDY_CONFIGURE_DSH_RUNTIME,
             REMEDY_SELECT_INDIVIDUAL_HOST,
         ], refusal
+        # The refusal that sends an operator to provision a runtime names the
+        # environment that could not import it, so the same readback cannot be
+        # taken for a machine-level fact.
+        _expect_probe(refusal["managed_executor"], available=False)
         _expect_no_effects(refusal)
         _expect_no_journal(refusal, runtime)
 
