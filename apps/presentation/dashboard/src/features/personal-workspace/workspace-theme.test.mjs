@@ -31,9 +31,9 @@ assert.ok(styles.includes('.personal-goal-row:nth-child(n) .personal-goal-state-
 assert.match(styles, /personal-home-goal-card { border-radius: 12px/, "LoopX standard uses the card radius for Goal cards");
 assert.match(styles, /personal-channel-composer { border-radius: 6px/, "LoopX standard uses the control radius for the composer");
 assert.match(styles, /personal-channel-composer > button,[\s\S]*background: #171717/, "LoopX standard uses an ink command button");
-assert.match(styles, /personal-quick-prompts button.is-immediate[\s\S]*background: #ffffff/, "LoopX standard keeps shortcut actions neutral");
+assert.match(styles, /personal-quick-prompts button {[^}]*background: #fff/, "Shortcut actions keep one neutral chip style");
 assert.match(styles, /personal-goal-draft-status { border-color: #dedede; border-radius: 6px; background: #f2f2f2/, "LoopX standard keeps Goal draft guidance neutral");
-assert.match(styles, /personal-prompt-badge { background: #171717; color: #ffffff/, "LoopX standard uses an ink immediate-action badge");
+assert.ok(!styles.includes("personal-prompt-badge"), "Shortcut actions carry no draft/immediate badge");
 assert.match(styles, /personal-select-trigger[\s\S]*font-size: 12px/, "Workspace selects preserve the compact control type size");
 assert.match(styles, /personal-select-option[\s\S]*min-height: 32px[\s\S]*font-size: 12px/, "Workspace select options stay compact");
 assert.ok(styles.includes('.personal-goal-tabs button[aria-current="page"]::after'), "Goal views use a restrained active underline");
