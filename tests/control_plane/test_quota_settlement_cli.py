@@ -1969,8 +1969,13 @@ def test_same_turn_identityless_guard_upgrades_and_settles_full_chain(
 
     assert first_rc == 0, first
     assert "settlement_identity" not in first["heartbeat_receipt"]
+    # The documented wake order commits this receipt before a work item exists,
+    # so the guard has to say the turn still owes its binding instead of letting
+    # the caller discover it when the closeout cannot settle.
+    assert first["heartbeat_receipt"]["settlement_binding_owed"] is True
     assert upgraded_rc == 0, upgraded
     assert upgraded["heartbeat_receipt"]["status"] == "upgraded"
+    assert "settlement_binding_owed" not in upgraded["heartbeat_receipt"]
     identity = upgraded["heartbeat_receipt"]["settlement_identity"]
     assert identity["todo_id"] == TODO_ID
     assert identity["effect_id"] == f"{GOAL_ID}:{AGENT_ID}:{TODO_ID}:{TURN_ID}"
