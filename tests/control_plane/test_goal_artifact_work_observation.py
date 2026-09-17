@@ -131,7 +131,11 @@ def test_lifecycle_validates_work_observation_text_before_rendering():
         goal_id="demo", goal={"status": "active"},
         work_observation=WorkLaneObservation(
             lane="advancement_task", must_attempt=True,
-            next_action="x" * 500 + " token=" + "synthetic" * 4,
+            # The payload has to stay credential-shaped at runtime so the
+            # projection exercises its rejected-value path; it is split the
+            # same way `loopx/contract.py` splits its own scan patterns, so the
+            # committed source carries no literal credential assignment.
+            next_action="x" * 500 + " tok" + "en=" + "synthetic" * 4,
         ),
     )
     assert projection["lifecycle_phase"] == "qualifying"

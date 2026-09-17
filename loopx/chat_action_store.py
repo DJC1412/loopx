@@ -846,16 +846,20 @@ class ChatActionStore:
         *,
         error_code: str,
         message: str,
+        details: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        failure = _safe_json_value(
-            {
-                "error_code": _opaque_id(error_code, field="error_code"),
-                "message": _bounded_text(message, field="message", limit=1000),
-                "failed_at": _utc_now(),
-                "retry_safe": True,
-            },
-            path="failure",
-        )
+        # A failure that happened after part of the work was committed has to
+        # carry those identities, or the retry cannot tell what already exists
+        # and the owner has to reconstruct it from the message.
+        record: dict[str, Any] = {
+            "error_code": _opaque_id(error_code, field="error_code"),
+            "message": _bounded_text(message, field="message", limit=1000),
+            "failed_at": _utc_now(),
+            "retry_safe": True,
+        }
+        if details is not None:
+            record["details"] = dict(details)
+        failure = _safe_json_value(record, path="failure")
         return self._transition(
             proposal_id,
             from_states={"applying", "preview_ready", "gated"},

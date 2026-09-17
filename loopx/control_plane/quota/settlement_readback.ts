@@ -501,8 +501,17 @@ function inferPersistedIdentity(
   return null;
 }
 
-function failedIdentity(reason: string, kind: "invalid_identity" | "identity_mismatch" | "receipt_missing") {
-  return settlementFailed<JsonObject>({ kind, step_kind: "validation", reason });
+function failedIdentity(
+  reason: string,
+  kind: "invalid_identity" | "identity_mismatch" | "receipt_missing",
+  details?: JsonObject,
+) {
+  return settlementFailed<JsonObject>({
+    kind,
+    step_kind: "validation",
+    reason,
+    ...(details ? { details } : {}),
+  });
 }
 
 function resolveIdentity(
@@ -573,6 +582,27 @@ function resolveIdentity(
   const receiptReplanObligationId = normalizeReplanObligationId(
     receiptDetails.replan_obligation_id,
   );
+  if (receiptTodoId === null && receiptReplanObligationId === null) {
+    // A same-turn guard that ran before any work item was chosen commits a
+    // receipt with no settlement binding, and the documented wake order (guard,
+    // then select) produces exactly that state. This read model never binds --
+    // the guard's own same-turn reconciliation owns that, so there is one
+    // binder rather than two -- which means the caller has to be told the state
+    // and the exact repair instead of being handed a binding mismatch it cannot
+    // act on.
+    return failedIdentity(
+      "the quota should-run receipt for this turn carries no settlement binding " +
+        `yet (turn_instance_id ${turnInstanceId}); rebind it through the guard's ` +
+        "same-turn reconciliation, then settle: quota should-run --turn-instance-id " +
+        `${turnInstanceId} --todo-id ${identity.todo_id ?? "<todo_id>"}`,
+      "identity_mismatch",
+      {
+        binding_kind: "unbound",
+        requested_binding_kind: identity.binding_kind,
+        turn_instance_id: turnInstanceId,
+      },
+    );
+  }
   if (
     receiptTodoId !== identity.todo_id ||
     receiptReplanObligationId !== identity.replan_obligation_id
