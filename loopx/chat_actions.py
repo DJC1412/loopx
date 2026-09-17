@@ -1139,19 +1139,10 @@ class ChatActionService(
             receipt["lanes"] = [dict(item) for item in lane_settlements]
         if gap_count:
             receipt["gap_count"] = gap_count
-        gap_lanes = settlement.get("gap_lanes")
-        if gap_lanes:
-            # A partial commitment has to name what is still missing, and the
-            # host fact behind each lane, or the card can only report a number
-            # the owner cannot act on.
-            receipt["gap_lanes"] = [
-                {
-                    "lane_id": str(item.get("lane_id") or ""),
-                    "agent_id": str(item.get("agent_id") or ""),
-                    "reason_code": str(item.get("reason_code") or ""),
-                }
-                for item in gap_lanes
-            ]
+        if settlement.get("gap_lanes"):
+            # A partial commitment names what is still missing and the host fact
+            # behind each lane; the settlement already resolved both.
+            receipt["gap_lanes"] = [dict(item) for item in settlement["gap_lanes"]]
         if intent_basis:
             # The canonical revision these lanes were created against, so the
             # owner's readback can name what the work advances.

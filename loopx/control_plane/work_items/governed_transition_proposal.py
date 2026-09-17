@@ -823,13 +823,18 @@ STEWARD_TEAM_PLAN_GAP_REASONS = (
 # reader can tell an owner-declared gap from a staffability verdict Core made.
 STEWARD_TEAM_PLAN_UNSUPPORTED_ACTION_KIND = "action_kind_not_supported"
 STEWARD_TEAM_PLAN_HOST_GAP_REASONS = (STEWARD_TEAM_PLAN_UNSUPPORTED_ACTION_KIND,)
-# The two facts that make one lane unstaffable here, read back by a receipt:
-# the Goal does not register the lane's Agent, or this host does not ship the
-# action kind it asked for.
+# The facts that make one lane unstaffable, read back by a receipt: the Goal
+# does not register the lane's Agent, or this host does not ship the action kind
+# it asked for.
 STEWARD_TEAM_PLAN_AGENT_NOT_REGISTERED = "agent_not_registered"
+# A receipt names the gap a settlement actually left, so it carries every reason
+# a gap lane can hold: the plan's own declared reasons (a plan may say its lane
+# is unstaffed on a capability or audience fact) plus the host's verdict. Read
+# back from the plan's narrower set, a declared capability gap would fail its
+# own receipt after the plan had been admitted.
 _GAP_LANE_REASONS = (
-    STEWARD_TEAM_PLAN_AGENT_NOT_REGISTERED,
-    STEWARD_TEAM_PLAN_UNSUPPORTED_ACTION_KIND,
+    *STEWARD_TEAM_PLAN_GAP_REASONS,
+    *STEWARD_TEAM_PLAN_HOST_GAP_REASONS,
 )
 
 

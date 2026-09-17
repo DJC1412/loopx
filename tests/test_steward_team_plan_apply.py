@@ -204,6 +204,48 @@ def test_a_lane_whose_kind_the_host_does_not_ship_creates_nothing(
     assert state.count("loopx:todo ") == 1
 
 
+@pytest.mark.parametrize(
+    "reason_code",
+    ["agent_not_registered", "capability_not_granted", "audience_not_authorized"],
+)
+def test_a_lane_that_declares_its_own_gap_keeps_that_reason_in_the_receipt(
+    tmp_path: Path, reason_code: str
+) -> None:
+    """A plan may declare why its own lane is unstaffed, and that reason survives.
+
+    The preview admits three reasons for a gap a plan declares about itself, but
+    a receipt reads the gap back against a closed vocabulary. When that
+    vocabulary only listed the host's two verdicts, an admitted plan that
+    declared a capability or audience gap failed its own receipt -- after the
+    owner had confirmed it.
+    """
+
+    project, registry_path = _fixture(tmp_path)
+    declared_gap_lane = {
+        "lane_id": "lane-beta",
+        "agent_id": "agent-beta",
+        "acceptance": "Never reached",
+        "staffing_gap": {
+            "reason_code": reason_code,
+            "note": "the owner's plan already decided this lane cannot be staffed",
+        },
+    }
+
+    receipts = _settle(registry_path, _proposal(extra_lane=declared_gap_lane))
+
+    assert receipts[0]["gap_count"] == 1
+    assert receipts[0]["gap_lanes"] == [
+        {
+            "lane_id": "lane-beta",
+            "agent_id": "agent-beta",
+            "reason_code": reason_code,
+        }
+    ]
+    state = _todos(project)
+    assert "Advance the intake contract" in state
+    assert state.count("loopx:todo ") == 1
+
+
 def test_an_unknown_goal_is_refused_before_any_todo(tmp_path: Path) -> None:
     project, registry_path = _fixture(tmp_path)
     unknown = _proposal()
