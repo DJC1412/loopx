@@ -485,12 +485,15 @@ def manager_channel_binding(
     executor_kind = MANAGER_ENDPOINT_KINDS.get(endpoint, "")
     credential_env = ""
     execution_profile: str | None = None
+    runtime_probe: dict[str, Any] | None = None
     if executor_kind == MANAGER_EXECUTOR_KIND_MANAGED:
         managed = managed_executor_binding(endpoint, environ=environ)
         credential_env = str(managed.get("credential_env") or "")
         execution_profile = managed.get("execution_profile")
         available: bool | None = managed.get("available")
         unavailable_reason: str | None = managed.get("unavailable_reason")
+        if isinstance(managed.get("runtime_probe"), Mapping):
+            runtime_probe = dict(managed["runtime_probe"])
     else:
         available, unavailable_reason = None, None
     model, model_source = manager_model_resolution(
@@ -523,6 +526,11 @@ def manager_channel_binding(
         "execution_profile": execution_profile,
         "available": available,
         "unavailable_reason": unavailable_reason,
+        # Which environment answered the launchability verdict, quoted from the
+        # governed Turn surface's own readback. A surface that shows
+        # `dsh_runtime_unavailable` without this cannot tell an operator which
+        # of this machine's interpreters is missing the runtime.
+        "runtime_probe": runtime_probe,
         "model": model,
         "model_source": model_source,
         **manager_channel_session_mode_readback(session),

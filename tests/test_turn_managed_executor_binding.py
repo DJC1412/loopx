@@ -2,21 +2,26 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from loopx.control_plane.turn_driver.host_binding import (
+    DSH_RUNTIME_MODULE,
     DSH_RUNTIME_UNAVAILABLE,
     EXECUTOR_KIND_GENERIC,
     EXECUTOR_KIND_INDIVIDUAL,
     EXECUTOR_KIND_MANAGED,
     INDIVIDUAL_TURN_HOST,
     MANAGED_EXECUTOR_BINDING_SCHEMA_VERSION,
+    MANAGED_RUNTIME_PROBE_SCHEMA_VERSION,
     MANAGED_TURN_HOST,
     OPERATOR_CREDENTIAL_UNCONFIGURED,
     REMEDY_CONFIGURE_DSH_RUNTIME,
     REMEDY_CONFIGURE_OPERATOR_CREDENTIAL,
     REMEDY_CORRECT_EXECUTION_PROFILE,
     REMEDY_SELECT_INDIVIDUAL_HOST,
+    RUNTIME_PROBE_SCOPE_INTERPRETER,
     managed_executor_unavailable_payload,
     managed_executor_binding,
     resolve_default_turn_host,
@@ -59,7 +64,43 @@ def test_managed_executor_reports_the_operator_credential_and_endpoint():
         "available": True,
         "unavailable_reason": None,
         "unavailable_remediation": [],
+        "runtime_probe": {
+            "schema_version": MANAGED_RUNTIME_PROBE_SCHEMA_VERSION,
+            "module": DSH_RUNTIME_MODULE,
+            "scope": RUNTIME_PROBE_SCOPE_INTERPRETER,
+            "available": True,
+        },
     }
+
+
+def test_the_runtime_verdict_states_what_it_is_a_claim_about():
+    """A process-level answer must not read as a machine-level fact."""
+
+    present = managed_executor_binding(
+        "dsh",
+        environ={"DEEPSEEK_API_KEY": "sk-operator"},
+        module_probe=_RUNTIME,
+    )
+    absent = managed_executor_binding(
+        "dsh",
+        environ={"DEEPSEEK_API_KEY": "sk-operator"},
+        module_probe=_NO_RUNTIME,
+    )
+    individual = managed_executor_binding("codex-cli")
+
+    # The probe follows the same seam the verdict does, so a caller that
+    # injects one gets both facts from one answer.
+    assert present["runtime_probe"]["available"] is True
+    assert absent["runtime_probe"]["available"] is False
+    assert absent["runtime_probe"]["scope"] == RUNTIME_PROBE_SCOPE_INTERPRETER
+    assert absent["runtime_probe"]["module"] == DSH_RUNTIME_MODULE
+    # An individual executor probes no runtime, and the field is still present
+    # so no reader branches on its absence.
+    assert individual["runtime_probe"] is None
+    # This readback travels into the Turn execution payload, so it must stay
+    # public-safe: no absolute path, no credential value.
+    serialized = json.dumps(absent["runtime_probe"])
+    assert "/" not in serialized and "sk-operator" not in serialized, serialized
 
 
 def test_managed_executor_fails_closed_when_the_runtime_is_missing():

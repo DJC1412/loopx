@@ -45,6 +45,9 @@ from loopx.chat_runtime import ChatRuntimeController
 from loopx.chat_server import ChatHTTPServer, ChatRequestHandler
 from loopx.chat_store import ChatSessionStore
 from loopx.control_plane.turn_driver import host_binding
+from loopx.control_plane.turn_driver.host_binding import (
+    RUNTIME_PROBE_SCOPE_INTERPRETER,
+)
 from loopx.extensions.lark.cli_resolution import LarkCliResolution
 
 
@@ -651,6 +654,10 @@ def test_a_channel_without_a_session_reads_as_unbound(monkeypatch):
         MANAGER_CHANNEL_SESSION_MODE_SOURCE_UNBOUND
     )
     assert binding["session_status"] is None
+    # The channel quotes the governed Turn surface's probe scope, so a surface
+    # showing `dsh_runtime_unavailable` can say which environment answered.
+    assert binding["runtime_probe"]["scope"] == RUNTIME_PROBE_SCOPE_INTERPRETER
+    assert binding["runtime_probe"]["available"] is True
 
 
 def test_an_unrecognized_session_mode_is_named_rather_than_coerced():

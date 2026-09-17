@@ -197,6 +197,16 @@ line, `deepseek-v4-flash@high` in the shipped shape, with the provider prepended
 only when it is not the shipped one -- it is one line because every plan carries
 it, and the agent-facing output budget is a contract.
 
+`runtime_probe` states what the launchability verdict is a claim about: the
+module it probed (`deepseek_harness`) and `scope: "probing_interpreter"`. The dsh
+SDK is an optional dependency of the interpreter that answered, so one machine
+can hold a service environment where it resolves and a checkout environment
+where it does not, and the same readback then differs between them. Run
+`loopx doctor` to see which interpreter answered (`python.executable`) before
+provisioning a runtime the machine may already have; the probe never reports an
+absolute path itself, because this readback is carried into the Turn execution
+payload.
+
 `run-once --execute` fails closed on that verdict: status `unavailable`, no host
 invocation, no journal write, and no quota spend, with
 `dsh_runtime_unavailable`, `operator_credential_unconfigured`, or
