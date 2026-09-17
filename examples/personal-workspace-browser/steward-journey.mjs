@@ -163,15 +163,53 @@ export const stewardJourneyScenario = {
       await stewardCard.first().click();
       const goalNavigation = page.getByRole("navigation", { name: "Goal 视图" });
       await goalNavigation.getByRole("button", { name: "Chat" }).click();
-      // Probed before the owner types, so the owner's own words cannot be
-      // mistaken for a rendered steward affordance.
-      gaps.push(await probe(page, {
-        beat: "2-steward-prompts",
-        need: "the steward's bounded prompt set (找下一步 / 看阻塞 / 查证据) reachable from the conversation",
-        selectors: ["[data-testid='personal-steward-prompts']", "[data-steward-prompt]"],
-        phrases: ["看阻塞", "查证据"],
-      }));
+      // The row is asserted rather than probed: it ships with the product, and
+      // a regression here sends the owner back to typing, which is the
+      // behaviour this beat exists to prevent. Read before the owner types, so
+      // the owner's own words cannot be mistaken for a rendered affordance.
       const composer = page.getByLabel("向 LoopX 发送消息");
+      const promptRow = page.locator(".personal-quick-prompts");
+      await promptRow.first().waitFor({ state: "visible", timeout: 15_000 });
+      const promptLabels = (await promptRow.first().locator("button").allInnerTexts())
+        .map((label) => label.replace(/\s+/g, " ").trim())
+        .filter(Boolean);
+      const expectedPromptLabels = [
+        "询问下一步",
+        "向 Agent 获取进度报告",
+        "配置定时检查",
+        "看阻塞",
+        "查证据",
+      ];
+      const missingPromptLabels = expectedPromptLabels.filter(
+        (label) => !promptLabels.some((observed) => observed.includes(label)),
+      );
+      check(
+        missingPromptLabels.length === 0,
+        `the shipped quick-prompt row exposes the steward prompt set (missing: ${missingPromptLabels.join(" / ") || "none"}; observed: ${promptLabels.join(" / ") || "none"})`,
+      );
+      const gatePrompt = "当前 Goal 有哪些 Gate 或阻塞？哪些需要我决定？";
+      const gateChip = promptRow.first().getByRole("button", { name: "看阻塞" });
+      const gateChipPresent = (await gateChip.count()) > 0;
+      check(gateChipPresent, "the 看阻塞 steward chip is rendered in the quick-prompt row");
+      let chipTurn;
+      if (gateChipPresent) {
+        await gateChip.click();
+        for (let attempt = 0; attempt < 40 && !chipTurn; attempt += 1) {
+          chipTurn = api.turnRequests.find((request) => request.message === gatePrompt);
+          if (!chipTurn) await page.waitForTimeout(50);
+        }
+      }
+      check(Boolean(chipTurn), "clicking the 看阻塞 chip posts its message as an accepted Turn");
+      const composerAfterChip = await composer.inputValue();
+      check(
+        composerAfterChip === "",
+        `a chip click sends immediately and leaves no draft behind (composer: ${JSON.stringify(composerAfterChip)})`,
+      );
+      record("2-steward-prompts", {
+        prompt_labels: promptLabels,
+        gate_prompt_sent: Boolean(chipTurn),
+        composer_after_click: composerAfterChip,
+      });
       await composer.fill(`${STEWARD_PROMPT}：请给我一份当前 Goal 的下一步。`);
       await page.getByRole("button", { name: "发送", exact: true }).click();
       let turn;
