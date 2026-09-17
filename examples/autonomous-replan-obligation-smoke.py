@@ -300,18 +300,16 @@ def assert_typed_repeat_requires_two_equivalent_observations() -> None:
         replan_action = next(
             action for action in cli_actions if "refresh-state" in action
         )
-        # The printed transition has to be drivable on the first attempt. The
-        # semantic write gate rejects a peer delivery that does not name the
-        # worktree that produced it, and an open replan duty is settled by an
-        # acknowledged typed observation rather than by repeating the same one.
-        assert "--autonomous-replan-recorded" in replan_action, replan_action
-        assert "--agent-id codex-autonomous-replan-fixture --autonomous" in replan_action, (
-            replan_action
-        )
-        if "--delivery-outcome outcome_progress" in replan_action:
-            assert "--delivery-workspace-path <delivery-worktree>" in replan_action, (
-                replan_action
-            )
+        # The printed transition stays minimal and always legal: the workspace
+        # path is rejected for a non-delivery settlement and the replan ACK is
+        # the agent's own act, so both belong to the guidance instead of the
+        # command. The guidance still has to name both conditions, or an agent
+        # pays for them with a failed first attempt.
+        assert "--autonomous-replan-recorded" not in replan_action, replan_action
+        assert "--delivery-workspace-path" not in replan_action, replan_action
+        guidance = str(obligation["recommended_action"])
+        assert "--delivery-workspace-path <delivery-worktree>" in guidance, guidance
+        assert "--autonomous-replan-recorded" in guidance, guidance
 
 
 def assert_equivalent_observation_is_rejected_before_write() -> None:

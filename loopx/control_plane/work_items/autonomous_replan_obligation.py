@@ -30,7 +30,11 @@ REPLAN_NOVELTY_POLICY_SCHEMA_VERSION = "replan_evidence_delivery_policy_v0"
 TODO_LIFECYCLE_SETTLEMENT_RESOLUTION_MODE = "todo_lifecycle_settlement"
 REPLAN_NOVELTY_GUIDANCE = (
     " Use the host-projected coverage ledger and produce a typed semantic delta; "
-    "repeated observations cannot close replan."
+    "repeated observations cannot close replan. Two flags stay the agent's own "
+    "decision rather than part of the printed transition: add "
+    "`--delivery-workspace-path <delivery-worktree>` only when this Todo's "
+    "settlement requires a delivery workspace, and add "
+    "`--autonomous-replan-recorded` only once the bounded replan is recorded."
 )
 
 
@@ -172,7 +176,6 @@ def build_autonomous_replan_cli_actions(
     delivery_args = (
         "--delivery-batch-scale single_surface "
         "--delivery-outcome outcome_progress "
-        "--delivery-workspace-path <delivery-worktree> "
         if settlement_chain_ready
         else ""
     )
@@ -182,7 +185,7 @@ def build_autonomous_replan_cli_actions(
         "--progress-scope agent_lane "
         "--classification bounded_replan_progress "
         f"{delivery_args}{semantic_delta_args}"
-        f"{settlement_args}{scoped_cli_args} --autonomous-replan-recorded"
+        f"{settlement_args}{scoped_cli_args}"
     )
     if not settlement_chain_ready:
         return [refresh_action]
