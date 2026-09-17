@@ -591,11 +591,15 @@ export const typedActionsScenario = {
       await page.getByRole("button", { name: "Close", exact: true }).click();
 
       await page.locator(".personal-goal-link").first().click();
-      await page.getByRole("button", { name: "Configure scheduled check", description: "Fill in what to check, frequency, and stop condition before creation" }).click();
-      const englishMonitorDraft = await page.getByLabel("Send a message to LoopX").inputValue();
-      for (const field of ["Check target:", "Frequency", "Stop condition:"]) {
-        if (!englishMonitorDraft.includes(field)) throw new Error(`English monitor draft missing ${field}: ${englishMonitorDraft}`);
-      }
+      const writesBeforeEnglishMonitorShortcut = api.durableWriteCount;
+      await page.getByRole("button", { name: "Configure scheduled check" }).click();
+      await page.getByText("Confirm execution", { exact: true }).waitFor({ state: "visible" });
+      const englishMonitorShortcut = api.actionPreviews.findLast((preview) => preview.action_kind === "monitor.create");
+      if (englishMonitorShortcut?.normalized_parameters.cadence !== "2h") throw new Error(`English scheduled-check shortcut cadence drifted: ${JSON.stringify(englishMonitorShortcut?.normalized_parameters)}`);
+      if (englishMonitorShortcut?.normalized_parameters.stop_condition !== "goal_complete") throw new Error(`English scheduled-check shortcut stop condition drifted: ${JSON.stringify(englishMonitorShortcut?.normalized_parameters)}`);
+      if (englishMonitorShortcut?.normalized_parameters.target !== "Check the current Goal for blockers, progress, and new outputs") throw new Error(`English scheduled-check shortcut did not fall back to the localized default check target: ${JSON.stringify(englishMonitorShortcut?.normalized_parameters)}`);
+      if (api.durableWriteCount !== writesBeforeEnglishMonitorShortcut) throw new Error("English scheduled-check shortcut wrote durable state before confirmation");
+      await page.getByRole("button", { name: "Close", exact: true }).click();
       const previewsBeforeEnglishCalendarSchedule = api.actionPreviews.length;
       await page.getByLabel("Send a message to LoopX").fill([
         "Add a scheduled check for the current Goal:",
@@ -1640,7 +1644,15 @@ export const typedActionsScenario = {
       await page.getByRole("navigation", { name: "Goal 视图" }).getByRole("button", { name: "Chat" }).click();
       await page.getByRole("dialog").filter({ hasText: "确认执行" }).waitFor({ state: "hidden" });
 
+      const writesBeforeMonitorShortcut = api.durableWriteCount;
       await page.getByRole("button", { name: "配置定时检查" }).click();
+      await page.getByText("确认执行").waitFor({ state: "visible" });
+      const monitorShortcut = api.actionPreviews.findLast((preview) => preview.action_kind === "monitor.create");
+      if (monitorShortcut?.normalized_parameters.cadence !== "2h") throw new Error(`定时检查快捷方式频率漂移：${JSON.stringify(monitorShortcut?.normalized_parameters)}`);
+      if (monitorShortcut?.normalized_parameters.stop_condition !== "goal_complete") throw new Error(`定时检查快捷方式停止条件漂移：${JSON.stringify(monitorShortcut?.normalized_parameters)}`);
+      if (monitorShortcut?.normalized_parameters.target !== "检查当前 Goal 的阻塞、进度与新产出") throw new Error(`定时检查快捷方式未回落到本地化默认检查目标：${JSON.stringify(monitorShortcut?.normalized_parameters)}`);
+      if (api.durableWriteCount !== writesBeforeMonitorShortcut) throw new Error("定时检查快捷方式在确认前写入了持久状态");
+      await page.getByRole("button", { name: "关闭", exact: true }).click();
       await page.getByLabel("向 LoopX 发送消息").fill("为当前 Goal 添加定时检查：\n检查内容：复盘是否包含已完成、阻塞、下周计划\n频率：每周五 17:00\n停止条件：Goal 完成");
       const previewsBeforeUnsupportedSchedule = api.actionPreviews.length;
       await page.getByRole("button", { name: "发送", exact: true }).click();
