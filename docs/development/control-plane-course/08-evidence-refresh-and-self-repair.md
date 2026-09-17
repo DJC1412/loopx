@@ -312,15 +312,18 @@ if total_usage > GOAL_VISION_TOTAL_LIMIT:
 第二份 transcript。`examples/project/goal-vision-refresh-state-budget-smoke.py`
 同时验证写入正确性、预算与 repair delta。
 
-当 material refresh 没有 vision patch 或 unchanged reason 时，CLI 会产生 `vision_checkpoint_missing` acceptance gap。Todo 即使完成，也不能直接 terminal。
+正常调用应当在同一次写回里带上这个决定。当 agent lane 的 material closeout 没有 vision
+patch 或 unchanged reason 时，CLI 会记录 segment 并把 checkpoint 标成
+`vision_checkpoint_missing`，同时返回一条可直接执行的修复命令：在原 turn 用它补齐决定，
+settlement identity 不变、不会再花一次 spend。补齐之前，Todo 即使完成也不能宣告 terminal。
 
-修复选择有三种：
+要满足这个决定，路径仍是三种：
 
 1. 写一个 bounded vision patch；
 2. 明确记录 vision unchanged reason；
 3. 用 evidence 关闭或 supersede 该 vision frontier。
 
-不要为了消除 warning 随便写“unchanged”。Reason 必须与本轮 acceptance 事实一致。
+不要为了消除这个提示自动填一个空泛的“unchanged”。Reason 必须与本轮 acceptance 事实一致。
 
 ## Signal、Anchor 与 Feedback 不直接变成 Todo Truth
 

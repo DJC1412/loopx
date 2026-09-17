@@ -175,6 +175,20 @@ _REWARD_MEMORY_OUTCOME_PROMPT_V1_MIGRATION_ALLOWANCE: dict[Metric, int] = {
     "compact_payload_chars": 640,
 }
 
+# The vision writeback guidance now states the material-closeout decision: the
+# closeout carries its own vision decision, an omission is repaired on the same
+# turn through the command the CLI returns, the goal cannot reach its terminal
+# state first, and a segment does not record an unchanged reason it did not
+# earn. The allowance is bound to an exact none-to-v1 prompt revision, applies
+# only to heartbeat rows, and keeps the absolute surface ceilings intact. Once
+# v1 is the baseline, normal hot-path budgets apply again.
+_VISION_WRITEBACK_DECISION_PROMPT_V1_MIGRATION_ALLOWANCE: dict[Metric, int] = {
+    "chars": 128,
+    "utf8_bytes": 384,
+    "lines": 2,
+    "compact_payload_chars": 128,
+}
+
 # Two reviewed causes grow the Turn plan readback once, and both are consequences
 # of the same declared behavior change:
 #
@@ -246,6 +260,30 @@ def _reward_memory_outcome_prompt_allowance(
         == "reward_memory_outcome_prompt_v1"
     ):
         return _REWARD_MEMORY_OUTCOME_PROMPT_V1_MIGRATION_ALLOWANCE[metric]
+    return 0
+
+
+def _vision_writeback_decision_prompt_allowance(
+    row_id: str,
+    base: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+    metric: Metric,
+) -> int:
+    surface = row_id.partition("/")[2].partition("/")[0]
+    if (
+        row_id.startswith(("surface/", "variant/"))
+        and surface
+        in {
+            "heartbeat_prompt_thin",
+            "heartbeat_prompt_brief",
+            "heartbeat_prompt_compact",
+            "heartbeat_prompt_full",
+        }
+        and base.get("vision_writeback_decision_prompt_revision") is None
+        and candidate.get("vision_writeback_decision_prompt_revision")
+        == "vision_writeback_decision_prompt_v1"
+    ):
+        return _VISION_WRITEBACK_DECISION_PROMPT_V1_MIGRATION_ALLOWANCE[metric]
     return 0
 
 
@@ -580,6 +618,12 @@ def _compare_row(base: dict[str, Any], candidate: dict[str, Any]) -> dict[str, A
                 base=base_value,
             ),
             _reward_memory_outcome_prompt_allowance(
+                row_id,
+                base,
+                candidate,
+                metric,
+            ),
+            _vision_writeback_decision_prompt_allowance(
                 row_id,
                 base,
                 candidate,

@@ -172,6 +172,99 @@ def test_reward_memory_outcome_prompt_budget_is_one_time_bounded_and_prompt_only
     assert _compare_row(other, {**current, "row_id": other["row_id"]})["failures"]
 
 
+@pytest.mark.parametrize("row_kind", ["surface", "variant"])
+@pytest.mark.parametrize("mode", ["thin", "brief", "compact", "full"])
+def test_vision_writeback_decision_prompt_allowance_is_exact_and_prompt_only(
+    row_kind, mode
+):
+    from loopx.control_plane.heartbeat.rules import (
+        HEARTBEAT_VISION_WRITEBACK_RULE_SHORT,
+    )
+    from loopx.control_plane.testing.cli_output_differential import (
+        _VISION_WRITEBACK_DECISION_PROMPT_V1_MIGRATION_ALLOWANCE as ALLOWANCE,
+        _compare_row,
+        _vision_writeback_decision_prompt_allowance,
+    )
+    from loopx.control_plane.testing.cli_output_semantics import (
+        vision_writeback_decision_prompt_revision,
+    )
+
+    # The revision claims the one-time allowance only for the whole sentence.
+    assert (
+        vision_writeback_decision_prompt_revision(HEARTBEAT_VISION_WRITEBACK_RULE_SHORT)
+        == "vision_writeback_decision_prompt_v1"
+    )
+    assert (
+        vision_writeback_decision_prompt_revision(
+            HEARTBEAT_VISION_WRITEBACK_RULE_SHORT.replace(
+                "勿自动填 unchanged", "best effort"
+            )
+        )
+        is None
+    )
+
+    row_id = f"{row_kind}/heartbeat_prompt_{mode}/small/json"
+    unbound = _row(row_id=row_id)
+    migrated = {
+        **unbound,
+        "vision_writeback_decision_prompt_revision": (
+            "vision_writeback_decision_prompt_v1"
+        ),
+    }
+    for metric in ("chars", "utf8_bytes", "compact_payload_chars", "lines"):
+        assert (
+            _vision_writeback_decision_prompt_allowance(row_id, unbound, migrated, metric)
+            == ALLOWANCE[metric]
+        )
+    # An already-migrated baseline receives nothing.
+    assert (
+        _vision_writeback_decision_prompt_allowance(row_id, migrated, migrated, "chars")
+        == 0
+    )
+    # No other surface qualifies, even with the revision present.
+    other_id = f"{row_kind}/status/small/json"
+    assert (
+        _vision_writeback_decision_prompt_allowance(
+            other_id,
+            _row(row_id=other_id),
+            {
+                **_row(row_id=other_id),
+                "vision_writeback_decision_prompt_revision": (
+                    "vision_writeback_decision_prompt_v1"
+                ),
+            },
+            "chars",
+        )
+        == 0
+    )
+    # On the tight hot-path surface the migration allowance is the whole budget.
+    thin_id = f"{row_kind}/heartbeat_prompt_thin/small/markdown"
+    # The real thin Markdown row is a few thousand characters, which is why its
+    # ratio allowance stays at the 32-character floor.
+    base = _row(
+        row_id=thin_id,
+        format="markdown",
+        chars=6_400,
+        utf8_bytes=6_400,
+        lines=200,
+    )
+    already_migrated = {
+        **base,
+        "vision_writeback_decision_prompt_revision": (
+            "vision_writeback_decision_prompt_v1"
+        ),
+    }
+    current = {
+        **already_migrated,
+        "chars": base["chars"] + ALLOWANCE["chars"],
+    }
+    assert not _compare_row(base, current)["failures"]
+    assert _compare_row(base, {**current, "chars": current["chars"] + 1})["failures"]
+    assert _compare_row(
+        already_migrated, {**current, "chars": current["chars"] + 129}
+    )["failures"]
+
+
 def test_managed_executor_binding_budget_is_one_time_bounded_and_turn_only() -> None:
     from loopx.control_plane.testing.cli_output_differential import (
         _TURN_HOST_AND_MANAGED_EXECUTOR_BINDING_V0_GROWTH_ALLOWANCE as ALLOWANCE,

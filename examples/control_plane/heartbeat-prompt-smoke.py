@@ -85,7 +85,11 @@ def user_output_policy(task_body: str, *, mode: str) -> dict[str, str]:
 def assert_sole_notification_authority(task_body: str, *, mode: str) -> None:
     body = normalized(task_body)
     assert "no-change=`surface_only`/no spend; unchanged->" in body, mode
-    assert "`--vision-unchanged-reason`; material->actual outcome." in body, mode
+    assert (
+        "`--vision-unchanged-reason`; material closeout->actual outcome"
+        "+自己的 vision 决定; 缺则按返回的修复命令同 turn 补齐, 补齐前不 terminal; "
+        "勿自动填 unchanged."
+    ) in body, mode
 
     if mode == "full":
         assert (
@@ -714,7 +718,11 @@ def main() -> int:
     ):
         assert "no-change=`surface_only`/no spend" in task, label
         assert "`--vision-unchanged-reason`" in task, label
-        assert "material->actual outcome" in task, label
+        assert "material closeout->actual outcome" in task, label
+        assert "自己的 vision 决定" in task, label
+        assert "缺则按返回的修复命令同 turn 补齐" in task, label
+        assert "补齐前不 terminal" in task, label
+        assert "勿自动填 unchanged" in task, label
     assert "if absent say" not in thin_task, thin_task
     assert "If false/0: quiet/no-user-todo" not in thin_task, thin_task
 

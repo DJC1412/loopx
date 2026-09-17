@@ -23,7 +23,9 @@ HEARTBEAT_NOTIFICATION_RULE_SHORT = (
 )
 HEARTBEAT_VISION_WRITEBACK_RULE_SHORT = (
     "writeback: no-change=`surface_only`/no spend; "
-    "unchanged->`--vision-unchanged-reason`; material->actual outcome."
+    "unchanged->`--vision-unchanged-reason`; material closeout->actual outcome"
+    "+自己的 vision 决定; 缺则按返回的修复命令同 turn 补齐, 补齐前不 terminal; "
+    "勿自动填 unchanged."
 )
 REWARD_MEMORY_OUTCOME_RULE = (
     "`reward_memory_recall.experiment.automatic_ingest=true`: reusable Todo outcomes "

@@ -90,7 +90,10 @@ def test_heartbeat_envelope_and_body_overflow_are_both_rejected() -> None:
     check("heartbeat_prompt_json", payload)
     # Passing the inner body check cannot hide extra envelope metadata.
     envelope = {**payload, "extra": ""}
-    envelope["extra"] = "x" * (4800 - smoke["json_size"](envelope))
+    ceiling = int(
+        smoke["SURFACE_BUDGETS"]["heartbeat_prompt_json"]["max_json_chars"]
+    )
+    envelope["extra"] = "x" * (ceiling - smoke["json_size"](envelope))
     check("heartbeat_prompt_json", envelope)
     envelope["extra"] += "x"
     with pytest.raises(AssertionError):

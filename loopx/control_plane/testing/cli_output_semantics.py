@@ -63,6 +63,30 @@ def managed_executor_binding_revision(text: str) -> str | None:
         else None
     )
 
+
+def vision_writeback_decision_prompt_revision(text: str) -> str | None:
+    """Attribute the one-time material-closeout vision writeback revision.
+
+    This is qualification evidence for the exact guidance sentence, never a
+    runtime classifier: it requires the decision, the original-turn repair
+    through the command the CLI returns, the terminal gate, and the ban on
+    fabricating an unchanged reason, so a partial or paraphrased prompt cannot
+    claim the one-time allowance.
+    """
+
+    required = (
+        "material closeout->actual outcome",
+        "自己的 vision 决定",
+        "按返回的修复命令同 turn 补齐",
+        "补齐前不 terminal",
+        "勿自动填 unchanged",
+    )
+    return (
+        "vision_writeback_decision_prompt_v1"
+        if all(fragment in text for fragment in required)
+        else None
+    )
+
 _MARKDOWN_HEADING = re.compile(r"^#{1,6}\s+.+$")
 _RUNTIME_ROOT_COMMAND_ROUTE = re.compile(
     r"(?m)(?:^|[\"'`])[^\r\n\S]*loopx\s+--runtime-root\s+"

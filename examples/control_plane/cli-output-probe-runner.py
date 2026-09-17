@@ -108,6 +108,9 @@ def _receipt_row(
         "reward_memory_outcome_prompt_revision": (
             semantics.reward_memory_outcome_prompt_revision(text)
         ),
+        "vision_writeback_decision_prompt_revision": (
+            semantics.vision_writeback_decision_prompt_revision(text)
+        ),
         "managed_executor_binding_revision": (
             semantics.managed_executor_binding_revision(text)
         ),

@@ -50,7 +50,10 @@ SURFACE_BUDGETS = {
         "cold_path": "quota should-run, status, or review-packet --handoff-only",
         # Includes generator metadata and scoped commands, not just task_body.
         # The independent 2,500-character thin body cap remains unchanged.
-        "max_json_chars": 4_800,
+        # The representative scoped fixture reached 4,795 characters, so this
+        # ceiling restores the contract's ~10% margin instead of squeezing the
+        # vision writeback guidance out of the envelope to fit 4,800.
+        "max_json_chars": 5_300,
         "max_nested_keys": 40,
         "max_top_level_keys": 30,
         "budget_field": "interface_budget",

@@ -232,6 +232,22 @@ Valid checkpoint decisions are:
 - `not_required`: no material closeout trigger was present, including a valid
   typed in-flight continuation.
 
+The closeout is where this requirement is met, so the writeback guidance every
+wake receives states it: a material closeout -- a material `delivery_outcome` on
+the agent lane, or a durable `## Next Action` update -- carries its own vision
+decision in the same `refresh-state` call, and does not record an `unchanged`
+reason the segment did not earn.
+
+An omission is recorded, not discarded, and is repaired in the same turn:
+`refresh-state` writes the segment with a `missing_required` checkpoint and
+returns the repair command that repeats the original invocation with the missing
+decision. The goal cannot reach its terminal no-follow-up state until that
+decision satisfies the checkpoint, and the same-turn supplement applies it to the
+original settlement identity rather than to a new one, so the repair neither
+re-authors the segment nor spends a second time. An in-flight continuation owes
+no decision, and neither does a closeout that carries no `agent_id`, because a
+per-agent decision requires an agent to make it.
+
 `missing_required` is not a chat reminder. Status keeps it in compact run
 history, quota filters it by current `agent_id`, and goal-frontier projection
 turns it into `acceptance_gaps[]`. If the current agent has no runnable
