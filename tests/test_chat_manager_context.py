@@ -336,7 +336,7 @@ def test_a_failed_source_read_reaches_the_turn_context_with_its_cause(
         return SimpleNamespace(
             returncode=255,
             stdout="",
-            stderr="huangruiteng@10.0.0.1: Permission denied (gssapi-with-mic).",
+            stderr="huangruiteng@203.0.113.7: Permission denied (gssapi-with-mic).",
         )
 
     result = context.manager_turn_context(

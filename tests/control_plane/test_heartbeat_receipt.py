@@ -7,6 +7,7 @@ import pytest
 
 from loopx.control_plane.quota.heartbeat_receipt import (
     find_heartbeat_receipt,
+    heartbeat_receipt_view,
     upgrade_identityless_heartbeat_receipt,
 )
 from loopx.rollout_event_log import (
@@ -95,6 +96,48 @@ def test_identityless_receipt_upgrade_rejects_conflicting_selected_todo(
         _upgrade(tmp_path, todo_id="todo_conflicting")
 
     assert len(load_rollout_events(rollout_event_log_path(tmp_path, GOAL_ID))) == 2
+
+
+def test_the_receipt_view_says_when_the_turn_still_owes_its_binding(
+    tmp_path: Path,
+) -> None:
+    """A guard that ran before selection may not read as a settled guard.
+
+    The documented wake order commits the receipt first, so the view has to name
+    the debt: without it the caller only finds out when the closeout refuses, and
+    the turn's work stays unaccounted.
+    """
+
+    identityless = _append_receipt(tmp_path)
+    owed = heartbeat_receipt_view(
+        identityless,
+        turn_instance_id=TURN_ID,
+        status="committed",
+    )
+
+    assert owed["settlement_binding_owed"] is True
+    assert "settlement_identity" not in owed
+
+    # A receipt that names its work item and effect no longer owes anything, and
+    # the flag is absent rather than false so a bound receipt keeps its shape.
+    bound = _append_receipt(tmp_path, todo_id=TODO_ID, effect_id=EFFECT_ID)
+    served = heartbeat_receipt_view(
+        bound,
+        turn_instance_id=TURN_ID,
+        status="upgraded",
+    )
+
+    assert "settlement_binding_owed" not in served
+    assert served["settlement_identity"]["todo_id"] == TODO_ID
+
+    # A half-written binding (a work item with no effect id) cannot settle
+    # either, so it still counts as owed instead of reading as bound.
+    half = _append_receipt(tmp_path, todo_id=TODO_ID)
+    assert heartbeat_receipt_view(
+        half,
+        turn_instance_id=TURN_ID,
+        status="committed",
+    )["settlement_binding_owed"] is True
 
 
 def test_concurrent_identityless_receipt_upgrades_append_one_correction(

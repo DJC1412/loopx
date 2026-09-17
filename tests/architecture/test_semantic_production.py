@@ -53,8 +53,8 @@ def vocabulary():
             'literal_scan': {'field': 'action'}}
 
 
-def row(value, *, site=SITE, unresolved=False):
-    return Production(site, 1, 'return', frozenset([value]) if value else frozenset(), unresolved)
+def row(value, *, site=SITE, unresolved=False, blocker=None):
+    return Production(site, 1, 'return', frozenset([value]) if value else frozenset(), unresolved, blocker)
 
 
 def test_owner_values_never_satisfy_production_liveness():
@@ -74,9 +74,12 @@ def test_registering_an_unrelated_function_does_not_cover_a_writer():
 
 def test_dynamic_path_remains_visible_and_cannot_supply_missing_value():
     with pytest.raises(ValueError, match='no observed producer'):
-        validate_production('action', vocabulary(), [row('run'), row(None, unresolved=True)])
-    unknown = validate_production('action', vocabulary(), [row('run'), row('wait'), row(None, unresolved=True)])
-    assert unknown == [SITE + ':1']
+        validate_production('action', vocabulary(), [row('run'), row(None, unresolved=True, blocker='call_result')])
+    unknown = validate_production('action', vocabulary(),
+                                  [row('run'), row('wait'), row(None, unresolved=True, blocker='call_result')])
+    # The reported entry names the site and why it stayed unknown. Passing the
+    # blocker explicitly keeps a lost label from passing as the `other` fallback.
+    assert unknown == [f'{SITE}:1 [call_result]']
 
 
 def test_compatibility_values_must_have_no_observed_production():
@@ -288,3 +291,23 @@ def test_input_witness_runs_only_for_the_anchored_site():
     rows = collect_production(ROOT, anchored, [])
     assert {r.form for r in rows} == {'input_witness'}
     assert set().union(*(r.values for r in rows)) == set(values)
+
+
+def test_reported_sites_carry_a_blocker_label_and_summarise():
+    import runpy
+
+    from loopx.semantics.inventory import load_sources
+
+    smoke = runpy.run_path(str(ROOT / 'examples/semantic-vocabulary-drift-smoke.py'),
+                           run_name='not_main')
+    registry = smoke['load_registry']()
+    sites = smoke['check_producers'](registry, load_sources(ROOT))
+    assert sites, 'the repository still has unresolved producer sites to describe'
+    assert all(site.endswith(']') and ' [' in site for site in sites)
+    summary = smoke['summarise_blockers'](sites)
+    counted = sum(int(part.split('=')[1]) for part in summary.split(','))
+    assert counted == len(sites)
+    # These two can never become evidence, so they must stay separable from the
+    # paths a future slice could still resolve.
+    assert 'argument_name_only=' in summary
+    assert 'annotation_only=' in summary

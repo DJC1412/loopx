@@ -52,6 +52,7 @@ _OPTIONAL_RECEIPT_FIELDS = {
     "intent_basis",
     "lane_settlements",
     "gap_count",
+    "lane_failure",
 }
 _LANE_TODO_ID_LIMIT = 8
 _LANE_TODO_ID = re.compile(r"^todo_[A-Za-z0-9]{1,40}$")
@@ -65,6 +66,9 @@ _LANE_SETTLEMENT_FIELDS = {
     "acceptance",
 }
 _LANE_SETTLEMENT_DISPOSITIONS = ("created", "reused")
+# A lane write this settlement could not complete. The vocabulary stays typed so
+# a reader can act on the failure without parsing prose.
+_LANE_FAILURE_REASON_CODES = ("lane_write_failed",)
 
 
 TransitionCheckpoint = Callable[[list[dict[str, Any]]], None]
@@ -188,6 +192,15 @@ def validate_governed_transition_receipts(
             or not 1 <= gap_count <= STEWARD_TEAM_PLAN_LANE_LIMIT
         ):
             raise ValueError("governed transition proposal receipt gap_count is invalid")
+        lane_failure = receipt.get("lane_failure")
+        if lane_failure is not None:
+            failure = _mapping(lane_failure, "governed transition lane failure")
+            if set(failure) != {"lane_id", "reason_code"} or str(
+                failure["reason_code"]
+            ) not in _LANE_FAILURE_REASON_CODES:
+                raise ValueError(
+                    "governed transition proposal receipt lane_failure is invalid"
+                )
         validate_public_safe_value(receipt, path=f"transition_receipts[{index}]")
         receipts.append(receipt)
     return receipts
@@ -481,22 +494,39 @@ def _apply_team_plan(
     created: list[str] = []
     reused: list[str] = []
     lane_settlements: list[dict[str, str]] = []
+    lane_failure: dict[str, str] | None = None
     for lane in preview["lanes"]:
         if lane.get("staffing") != "ready":
             continue
         first_todo = lane["first_todo"]
         priority = str(first_todo["priority"])
-        result = add_goal_todo(
-            registry_path=Path(registry_path).expanduser(),
-            goal_id=goal_id,
-            role="agent",
-            text=_lane_todo_text(str(first_todo["text"]), priority),
-            status=TODO_STATUS_OPEN,
-            task_class=TODO_TASK_CLASS_ADVANCEMENT,
-            action_kind=str(first_todo["action_kind"]),
-            claimed_by=str(lane["agent_id"]),
-            agent_id=str(lane["agent_id"]),
-        )
+        try:
+            result = add_goal_todo(
+                registry_path=Path(registry_path).expanduser(),
+                goal_id=goal_id,
+                role="agent",
+                text=_lane_todo_text(str(first_todo["text"]), priority),
+                status=TODO_STATUS_OPEN,
+                task_class=TODO_TASK_CLASS_ADVANCEMENT,
+                action_kind=str(first_todo["action_kind"]),
+                claimed_by=str(lane["agent_id"]),
+                agent_id=str(lane["agent_id"]),
+            )
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+            # Each lane is written by the canonical Todo owner under its own
+            # lock, so a multi-lane plan is a recoverable workflow rather than
+            # one atomic transaction: by the time a later lane fails, the
+            # earlier lanes are real work that must not be reported as a plan
+            # that applied, and must not be created twice by the retry. The
+            # failure is therefore returned with the identities that exist, and
+            # a plan that committed nothing at all is still an error.
+            if not lane_settlements:
+                raise
+            lane_failure = {
+                "lane_id": str(lane["lane_id"]),
+                "reason_code": "lane_write_failed",
+            }
+            break
         todo_id = str(result["todo_id"])
         if result.get("added"):
             created.append(todo_id)
@@ -522,12 +552,17 @@ def _apply_team_plan(
         # A plan that staffed no lane is neither a creation nor a reuse, and
         # saying "reused" for it is what let an empty confirmation read as
         # success. The three outcomes stay distinct.
-        "action": "created" if created else ("reused" if reused else "unstaffed"),
+        "action": (
+            "partially_created"
+            if lane_failure
+            else "created" if created else ("reused" if reused else "unstaffed")
+        ),
         "todo_id": lane_todo_ids[0] if lane_todo_ids else "",
         "target_key": None,
         "created_todo_ids": created,
         "lane_todo_ids": lane_todo_ids,
         "lane_settlements": lane_settlements,
+        "lane_failure": lane_failure,
         "intent_basis": intent_basis,
         "reused_lane_count": len(reused),
         "gap_count": len(preview["gaps"]),
@@ -671,6 +706,15 @@ def settle_governed_transition_proposals(
             # partial application, and the reader has to be able to tell
             # without re-deriving the plan.
             receipt["gap_count"] = int(gap_count)
+        lane_failure = result.get("lane_failure")
+        if lane_failure:
+            # The lanes that exist are named beside the lane that could not be
+            # written, so a retry reconciles against real identities instead of
+            # re-deriving what the failed attempt managed to commit.
+            receipt["lane_failure"] = {
+                "lane_id": str(lane_failure["lane_id"]),
+                "reason_code": str(lane_failure["reason_code"]),
+            }
         if result.get("intent_basis"):
             # The work-graph edit this receipt records is traceable to the
             # canonical basis it was applied against, so a lane Todo can be tied
