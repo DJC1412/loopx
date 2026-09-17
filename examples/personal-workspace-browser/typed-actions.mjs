@@ -7,6 +7,34 @@ import {
 } from "./fixture.mjs";
 import { openWorkspacePage } from "./scenario-context.mjs";
 
+// A category switch is a state transition, not a settled fact: the panel can
+// still be mid-mount when a one-shot count runs, which is how this assertion
+// failed on CI while the same tree passed on main. Wait for the declared count
+// and, when it never settles, name what the page actually hosted so the next
+// failure is attributable without a local reproduction.
+async function waitForSelectorCount(page, selector, expected, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  let count = await page.locator(selector).count();
+  while (count !== expected && Date.now() < deadline) {
+    await page.waitForTimeout(100);
+    count = await page.locator(selector).count();
+  }
+  if (count === expected) {
+    return;
+  }
+  const hosted = await page.evaluate((target) => [...document.querySelectorAll(target)].map((node) => {
+    const rect = node.getBoundingClientRect();
+    const section = node.closest("section, main, div");
+    return `${node.tagName.toLowerCase()}.${node.className.toString().trim().split(/\s+/).join(".")}`
+      + ` section=${section ? section.className.toString().trim().split(/\s+/)[0] : "<none>"}`
+      + ` visible=${rect.width > 0 && rect.height > 0}`;
+  }), selector);
+  throw new Error(
+    `Expected exactly ${expected} ${selector} panel(s) after the category settled, found ${count}`
+    + `${hosted.length ? `: ${hosted.join(" | ")}` : ""}`,
+  );
+}
+
 function operationProposal({ id, title, lifecycleState, status, resultDelivery = null }) {
   const outcomeObserved = lifecycleState === "outcome_observed";
   return {
@@ -563,11 +591,15 @@ export const typedActionsScenario = {
       await page.getByRole("button", { name: "Close", exact: true }).click();
 
       await page.locator(".personal-goal-link").first().click();
-      await page.getByRole("button", { name: "Configure scheduled check", description: "Fill in what to check, frequency, and stop condition before creation" }).click();
-      const englishMonitorDraft = await page.getByLabel("Send a message to LoopX").inputValue();
-      for (const field of ["Check target:", "Frequency", "Stop condition:"]) {
-        if (!englishMonitorDraft.includes(field)) throw new Error(`English monitor draft missing ${field}: ${englishMonitorDraft}`);
-      }
+      const writesBeforeEnglishMonitorShortcut = api.durableWriteCount;
+      await page.getByRole("button", { name: "Configure scheduled check" }).click();
+      await page.getByText("Confirm execution", { exact: true }).waitFor({ state: "visible" });
+      const englishMonitorShortcut = api.actionPreviews.findLast((preview) => preview.action_kind === "monitor.create");
+      if (englishMonitorShortcut?.normalized_parameters.cadence !== "2h") throw new Error(`English scheduled-check shortcut cadence drifted: ${JSON.stringify(englishMonitorShortcut?.normalized_parameters)}`);
+      if (englishMonitorShortcut?.normalized_parameters.stop_condition !== "goal_complete") throw new Error(`English scheduled-check shortcut stop condition drifted: ${JSON.stringify(englishMonitorShortcut?.normalized_parameters)}`);
+      if (englishMonitorShortcut?.normalized_parameters.target !== "Check the current Goal for blockers, progress, and new outputs") throw new Error(`English scheduled-check shortcut did not fall back to the localized default check target: ${JSON.stringify(englishMonitorShortcut?.normalized_parameters)}`);
+      if (api.durableWriteCount !== writesBeforeEnglishMonitorShortcut) throw new Error("English scheduled-check shortcut wrote durable state before confirmation");
+      await page.getByRole("button", { name: "Close", exact: true }).click();
       const previewsBeforeEnglishCalendarSchedule = api.actionPreviews.length;
       await page.getByLabel("Send a message to LoopX").fill([
         "Add a scheduled check for the current Goal:",
@@ -1049,10 +1081,8 @@ export const typedActionsScenario = {
       });
       await page.getByRole("button", { name: /模型 Provider 配置/ }).click();
       await page.getByRole("heading", { level: 1, name: "模型 Provider 配置", exact: true }).waitFor({ state: "visible" });
-      await page.locator(".personal-operator-credential").waitFor({ state: "visible" });
-      if (await page.locator(".personal-operator-credential").count() !== 1) {
-        throw new Error("The model provider category did not host exactly one credential panel");
-      }
+      await waitForSelectorCount(page, ".personal-operator-credential", 1);
+      await page.locator(".personal-operator-credential").first().waitFor({ state: "visible" });
       await page.locator(".personal-operator-credential-readback").waitFor({ state: "visible" });
       for (const label of [/^API key$/u, /^指纹$/u, /^Endpoint base URL$/u]) {
         await page.getByText(label).first().waitFor({ state: "visible" });
@@ -1614,7 +1644,15 @@ export const typedActionsScenario = {
       await page.getByRole("navigation", { name: "Goal 视图" }).getByRole("button", { name: "Chat" }).click();
       await page.getByRole("dialog").filter({ hasText: "确认执行" }).waitFor({ state: "hidden" });
 
+      const writesBeforeMonitorShortcut = api.durableWriteCount;
       await page.getByRole("button", { name: "配置定时检查" }).click();
+      await page.getByText("确认执行").waitFor({ state: "visible" });
+      const monitorShortcut = api.actionPreviews.findLast((preview) => preview.action_kind === "monitor.create");
+      if (monitorShortcut?.normalized_parameters.cadence !== "2h") throw new Error(`定时检查快捷方式频率漂移：${JSON.stringify(monitorShortcut?.normalized_parameters)}`);
+      if (monitorShortcut?.normalized_parameters.stop_condition !== "goal_complete") throw new Error(`定时检查快捷方式停止条件漂移：${JSON.stringify(monitorShortcut?.normalized_parameters)}`);
+      if (monitorShortcut?.normalized_parameters.target !== "检查当前 Goal 的阻塞、进度与新产出") throw new Error(`定时检查快捷方式未回落到本地化默认检查目标：${JSON.stringify(monitorShortcut?.normalized_parameters)}`);
+      if (api.durableWriteCount !== writesBeforeMonitorShortcut) throw new Error("定时检查快捷方式在确认前写入了持久状态");
+      await page.getByRole("button", { name: "关闭", exact: true }).click();
       await page.getByLabel("向 LoopX 发送消息").fill("为当前 Goal 添加定时检查：\n检查内容：复盘是否包含已完成、阻塞、下周计划\n频率：每周五 17:00\n停止条件：Goal 完成");
       const previewsBeforeUnsupportedSchedule = api.actionPreviews.length;
       await page.getByRole("button", { name: "发送", exact: true }).click();
