@@ -1080,6 +1080,35 @@ class ChatActionService(
         # from "the action was not a creation": a plan that created lanes beside
         # a gap is a partial application, and reporting it as a full success
         # told the owner the commitment was kept when part of it was not.
+        lane_failure = settlement.get("lane_failure")
+        if lane_failure:
+            # A lane failed after earlier lanes were written. The plan did not
+            # apply, so it is not reported as applied; the identities that do
+            # exist are recorded with the failure so the retry reconciles
+            # against them instead of creating a second copy of the same lane.
+            return {
+                "proposal": self.store.mark_failed(
+                    proposal_id,
+                    error_code="team_plan_lane_write_failed",
+                    message=(
+                        f"lane {lane_failure['lane_id']} could not be created; "
+                        f"{len(lane_todo_ids)} lane Todo(s) from this plan already exist"
+                    ),
+                    details={
+                        "goal_id": goal_id,
+                        "lane_todo_ids": lane_todo_ids,
+                        "lane_settlements": [
+                            dict(item)
+                            for item in (settlement.get("lane_settlements") or [])
+                        ],
+                        "failed_lane_id": str(lane_failure["lane_id"]),
+                        "failed_lane_reason_code": str(
+                            lane_failure["reason_code"]
+                        ),
+                    },
+                ),
+                "turn": None,
+            }
         if str(settlement.get("action") or "") == "reused":
             outcome = "team_plan_lanes_already_present"
         elif gap_count:

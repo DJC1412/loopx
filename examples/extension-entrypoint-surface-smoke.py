@@ -11,16 +11,19 @@ repository source tree, without importing provider code.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-from loopx.extensions.entrypoint_surface import (
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from loopx.extensions.entrypoint_surface import (  # noqa: E402
     EntrypointKind,
     render_report,
     resolve_declared_entrypoints,
 )
 
-
-ROOT = Path(__file__).resolve().parents[1]
 
 EXPECTED_KINDS = frozenset(kind.value for kind in EntrypointKind)
 

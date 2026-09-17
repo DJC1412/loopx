@@ -120,6 +120,39 @@ def _rewrite_objective(project: Path, objective: str) -> None:
     state_path.write_text(f"{updated}\n---{tail}", encoding="utf-8")
 
 
+def _two_lane_plan() -> dict:
+    plan = _plan()
+    plan["lanes"].append(
+        {
+            "lane_id": "lane-beta",
+            "agent_id": AGENT_ID,
+            "acceptance": "The second lane's first Todo is delivered with evidence",
+            "first_todo": {
+                "text": "Advance the second intake contract",
+                "priority": "P2",
+                "task_class": "advancement_task",
+                "action_kind": "implement",
+            },
+        }
+    )
+    return plan
+
+
+def _fail_lane_write(monkeypatch: pytest.MonkeyPatch, *, text: str) -> None:
+    """Make one lane's write fail, leaving the other lanes real."""
+
+    from loopx.control_plane.work_items import governed_transition_proposal
+
+    real = governed_transition_proposal.add_goal_todo
+
+    def guarded(**kwargs: object) -> dict:
+        if kwargs.get("text") == text:
+            raise OSError("simulated lane write failure")
+        return real(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(governed_transition_proposal, "add_goal_todo", guarded)
+
+
 def test_a_confirmed_plan_creates_each_ready_lane_first_todo(tmp_path: Path) -> None:
     project, _registry_path, service = _fixture(tmp_path)
 
@@ -228,6 +261,68 @@ def test_an_unchanged_objective_still_confirms_and_records_its_basis(
     # The receipt names the same canonical basis the preview bound.
     assert proposal["receipt"]["intent_basis"].startswith("sha256:")
     assert _todos(project).count("loopx:todo ") == 1
+
+
+def test_a_lane_that_fails_after_earlier_lanes_stays_recoverable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A partial materialization is neither reported as applied nor re-created.
+
+    Each lane is written by the canonical Todo owner under its own lock, so a
+    multi-lane plan is a recoverable workflow, not one atomic transaction. When a
+    later lane fails, the lanes that already exist are real work: the plan must
+    not report success, and the retry must reconcile against those identities
+    instead of creating a second copy of the same lane.
+    """
+
+    project, _registry_path, service = _fixture(tmp_path)
+    _fail_lane_write(monkeypatch, text="[P2] Advance the second intake contract")
+
+    applied = service.apply(_preview(service, _two_lane_plan())["proposal_id"])
+
+    proposal = applied["proposal"]
+    assert proposal["status"] == "failed"
+    failure = proposal["failure"]
+    assert failure["error_code"] == "team_plan_lane_write_failed"
+    assert failure["retry_safe"] is True
+    # The failure names the lane that could not be written and the identities
+    # that do exist, so the retry does not have to reconstruct them.
+    assert failure["details"]["failed_lane_id"] == "lane-beta"
+    assert failure["details"]["lane_settlements"][0]["lane_id"] == "lane-alpha"
+    existing = failure["details"]["lane_todo_ids"]
+    assert len(existing) == 1
+    state = _todos(project)
+    assert "Advance the intake contract" in state
+    assert "Advance the second intake contract" not in state
+    assert state.count("loopx:todo ") == 1
+
+    # Retry once the cause is gone: the lane that already exists is reused, so
+    # recovery neither duplicates the work nor loses it.
+    monkeypatch.undo()
+    retry = service.apply(_preview(service, _two_lane_plan())["proposal_id"])
+
+    assert retry["proposal"]["status"] == "applied"
+    receipt = retry["proposal"]["receipt"]
+    assert receipt["outcome"] == "team_plan_applied"
+    assert len(receipt["resource_ids"]["lane_todo_ids"]) == 2
+    assert receipt["lanes"][0]["todo_id"] == existing[0]
+    assert receipt["lanes"][0]["disposition"] == "reused"
+    assert receipt["lanes"][1]["disposition"] == "created"
+    assert _todos(project).count("loopx:todo ") == 2
+
+
+def test_a_lane_that_fails_before_any_work_is_an_error_not_a_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With nothing committed there is no partial state to reconcile."""
+
+    project, _registry_path, service = _fixture(tmp_path)
+    _fail_lane_write(monkeypatch, text="[P1] Advance the intake contract")
+
+    with pytest.raises(OSError, match="simulated lane write failure"):
+        service.apply(_preview(service, _two_lane_plan())["proposal_id"])
+
+    assert "loopx:todo " not in _todos(project)
 
 
 def _validated(preview_plan: dict) -> dict:

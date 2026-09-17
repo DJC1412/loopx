@@ -165,8 +165,8 @@ assert.match(timeline, /personal-message-images/, "Sent images remain visible in
 assert.match(dashboard, /attachments: route\?\.attachments/, "Image attachments enter the selected Agent Session");
 assert.match(page, /sendMessage\(t\("composer\.agentProgressPrompt"\)\)/, "Progress report shortcut sends a scoped read-only request immediately");
 assert.match(page, /t\("composer\.agentProgress"\)/, "Progress report shortcut makes its immediate-send behavior explicit");
-assert.match(page, /t\("composer\.nextAction"\)[\s\S]*t\("composer\.prepareDraft"\)/, "Advice shortcut explains that it only prepares a draft");
-assert.match(page, /t\("composer\.monitor"\)[\s\S]*t\("composer\.monitorHint"\)/, "Monitor shortcut explains its editable-draft boundary");
+assert.match(page, /t\("composer\.nextAction"\)[\s\S]*sendMessage\(t\("composer\.nextActionPrompt"\)\)/, "Advice shortcut sends its scoped question immediately");
+assert.match(page, /t\("composer\.monitor"\)[\s\S]*sendMessage\(t\("composer\.monitorShortcutTemplate", \{ target: t\("schedule\.defaultTarget"\) \}\)\)/, "Monitor shortcut sends its bounded template with a named check target immediately");
 assert.match(page, /goalDraftActive[\s\S]*t\("composer\.createGoalDraft"\)[\s\S]*t\("composer\.createGoal"/, "Create Goal mode is visibly distinct from a normal chat draft");
 assert.match(page, /setComposerDraft\(`manager:\$\{selectedAgentId\}`,\s*t\("composer\.createGoalTemplate"\)\)/, "Create Goal writes the localized template to the manager draft even when invoked from a Goal");
 assert.match(page, /personal-action-feedback/, "Typed actions surface a persistent visible receipt");

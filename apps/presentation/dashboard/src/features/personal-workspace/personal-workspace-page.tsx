@@ -18,6 +18,7 @@ import {
   listTypedActions,
   previewTypedAction,
   setupGoalChannel,
+  stewardPrompts,
   transitionTypedAction,
   type GoalRepositoryContext,
   type LarkGoalConnection,
@@ -853,10 +854,10 @@ export function PersonalWorkspacePage({
   function setComposer(value: string) {
     setComposerDraft(composerDraftKey, value);
   }
-  function fillQuickPrompt(text: string) {
-    const existing = drafts[composerDraftKey]?.trimEnd();
-    setComposer(existing ? `${existing}\n${text}` : text);
-    window.requestAnimationFrame(() => composerRef.current?.focus());
+  // The steward prompt set is owned by the client model; the quick-prompt row
+  // reuses it so one affordance answers "what now / what blocks / what is proven".
+  function stewardPromptText(id: string) {
+    return stewardPrompts.find((item) => item.id === id)?.prompt ?? "";
   }
   useEffect(() => {
     const el = composerRef.current;
@@ -2003,15 +2004,17 @@ export function PersonalWorkspacePage({
             </p>
             {selectedGoal ? (
               <div className="personal-quick-prompts">
-                <button aria-label={t("composer.nextAction")} className="is-draft" onClick={() => fillQuickPrompt(t("composer.nextActionPrompt"))} title={t("composer.prepareDraft")} type="button"><MessageCircleQuestion size={13} /><span>{t("composer.nextAction")}</span><small className="personal-prompt-subtle">{t("composer.draft")}</small></button>
-                <button className="is-immediate" disabled={sending} onClick={() => void sendMessage(t("composer.agentProgressPrompt"))} title={t("composer.immediate")} type="button"><Send size={13} /><span>{t("composer.agentProgress")}</span><em className="personal-prompt-badge">{t("composer.immediate")}</em></button>
-                <button aria-label={t("composer.monitor")} className="is-draft" onClick={() => prepareScheduleDraft("monitor", selectedGoalId)} title={t("composer.monitorHint")} type="button"><CalendarClock size={13} /><span>{t("composer.monitor")}</span><small className="personal-prompt-subtle">{t("composer.draft")}</small></button>
+                <button aria-label={t("composer.nextAction")} disabled={sending} onClick={() => void sendMessage(t("composer.nextActionPrompt"))} title={t("composer.sendMessageHint")} type="button"><MessageCircleQuestion size={13} /><span>{t("composer.nextAction")}</span></button>
+                <button aria-label={t("composer.agentProgress")} disabled={sending} onClick={() => void sendMessage(t("composer.agentProgressPrompt"))} title={t("composer.sendMessageHint")} type="button"><Send size={13} /><span>{t("composer.agentProgress")}</span></button>
+                <button aria-label={t("composer.monitor")} disabled={sending} onClick={() => void sendMessage(t("composer.monitorShortcutTemplate", { target: t("schedule.defaultTarget") }))} title={t("composer.sendMessageHint")} type="button"><CalendarClock size={13} /><span>{t("composer.monitor")}</span></button>
+                <button aria-label={t("composer.blockers")} disabled={sending || !stewardPromptText("gate")} onClick={() => void sendMessage(stewardPromptText("gate"))} title={t("composer.sendMessageHint")} type="button"><AlertCircle size={13} /><span>{t("composer.blockers")}</span></button>
+                <button aria-label={t("composer.evidence")} disabled={sending || !stewardPromptText("evidence")} onClick={() => void sendMessage(stewardPromptText("evidence"))} title={t("composer.sendMessageHint")} type="button"><FileText size={13} /><span>{t("composer.evidence")}</span></button>
               </div>
             ) : (
               <div className="personal-quick-prompts">
-                <button aria-label={t("composer.globalTasks")} className="is-draft" onClick={() => fillQuickPrompt(t("composer.globalTasksPrompt"))} title={t("composer.prepareDraft")} type="button"><MessageCircleQuestion size={13} /><span>{t("composer.globalTasks")}</span><small className="personal-prompt-subtle">{t("composer.draft")}</small></button>
-                <button className="is-immediate" disabled={sending} onClick={() => void sendMessage(t("composer.globalProgressPrompt"))} title={t("composer.immediate")} type="button"><Send size={13} /><span>{t("composer.globalProgress")}</span><em className="personal-prompt-badge">{t("composer.immediate")}</em></button>
-                <button aria-label={t("composer.createGoal")} className="is-draft" onClick={requestGoalCreate} title={t("composer.createGoalHint")} type="button"><Plus size={13} /><span>{t("composer.createGoal")}</span><small className="personal-prompt-subtle">{t("composer.draft")}</small></button>
+                <button aria-label={t("composer.globalTasks")} disabled={sending} onClick={() => void sendMessage(t("composer.globalTasksPrompt"))} title={t("composer.sendMessageHint")} type="button"><MessageCircleQuestion size={13} /><span>{t("composer.globalTasks")}</span></button>
+                <button aria-label={t("composer.globalProgress")} disabled={sending} onClick={() => void sendMessage(t("composer.globalProgressPrompt"))} title={t("composer.sendMessageHint")} type="button"><Send size={13} /><span>{t("composer.globalProgress")}</span></button>
+                <button aria-label={t("composer.createGoal")} onClick={requestGoalCreate} title={t("composer.createGoalHint")} type="button"><Plus size={13} /><span>{t("composer.createGoal")}</span></button>
               </div>
             )}
             {goalDraftActive ? <div className="personal-goal-draft-status" role="status"><strong>{t("composer.createGoalDraft")}</strong><span>{t("composer.createGoalDraftDescription")}</span></div> : null}

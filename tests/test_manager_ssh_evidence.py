@@ -592,11 +592,11 @@ def test_scope_change_between_reads_refuses_the_packet(tmp_path):
 @pytest.mark.parametrize(
     "stderr,returncode,expected",
     [
-        ("huangruiteng@10.0.0.1: Permission denied (gssapi-with-mic).", 255, "ssh_auth_required"),
+        ("huangruiteng@203.0.113.7: Permission denied (gssapi-with-mic).", 255, "ssh_auth_required"),
         # A remote command reporting a bare permission error about its own
         # files is not this machine's rejected credential.
         ("loopx: /home/x/.config: Permission denied", 1, "remote_evidence_unavailable"),
-        ("ssh: connect to host 10.0.0.1 port 22: Operation timed out", 255, "ssh_host_unreachable"),
+        ("ssh: connect to host 203.0.113.7 port 22: Operation timed out", 255, "ssh_host_unreachable"),
         ("ssh: Could not resolve hostname ark-devbox: Name or service not known", 255, "ssh_host_unreachable"),
         ("bash: line 1: /home/x/.local/bin/loopx: No such file or directory", 127, "remote_cli_missing"),
         ("some other ssh failure", 255, "remote_evidence_unavailable"),
@@ -625,7 +625,7 @@ def test_an_authentication_failure_is_reported_as_such_not_as_a_dead_host(
             argv,
             255,
             stdout="",
-            stderr="huangruiteng@10.0.0.1: Permission denied (gssapi-with-mic).",
+            stderr="huangruiteng@203.0.113.7: Permission denied (gssapi-with-mic).",
         )
 
     packet = remote_evidence(
@@ -655,12 +655,12 @@ def test_an_authentication_failure_is_reported_as_such_not_as_a_dead_host(
     "stderr,returncode,expected_limitation",
     [
         (
-            "huangruiteng@10.0.0.1: Permission denied (gssapi-with-mic).",
+            "huangruiteng@203.0.113.7: Permission denied (gssapi-with-mic).",
             255,
             "remote_source_ssh_auth_required",
         ),
         (
-            "ssh: connect to host 10.0.0.1 port 22: Operation timed out",
+            "ssh: connect to host 203.0.113.7 port 22: Operation timed out",
             255,
             "remote_source_ssh_host_unreachable",
         ),
