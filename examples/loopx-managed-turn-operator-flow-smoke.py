@@ -96,6 +96,7 @@ def main() -> None:
             machine_defaults=MANAGED_DEFAULTS,
             credential_source="machine_store",
             session=None,
+            module_probe=_runtime_installed,
         )
         if channel.get("executor_endpoint") != "dsh":
             fail(f"the channel must resolve the machine's executor: {channel}")

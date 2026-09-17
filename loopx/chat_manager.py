@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .control_plane.operator_credential import (
     env_text,
@@ -451,6 +451,7 @@ def manager_channel_binding(
     session: Mapping[str, Any] | None = None,
     machine_defaults: Mapping[str, Any] | None = None,
     credential_source: str | None = None,
+    module_probe: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
     """Project the steward channel's resolved executor, model, and their source.
 
@@ -477,6 +478,12 @@ def manager_channel_binding(
     one. Its mode and status are quoted so a frontend can show which execution
     mode is serving the channel, and an absent Session reads as unbound rather
     than as a mode this projection guessed.
+
+    ``module_probe`` is read by the governed Turn surface exactly as it is when
+    that surface is read on its own. A caller that resolves both readbacks on a
+    host whose optional runtime is not installed has to be able to hand the same
+    probe to both, or the channel and the planned Turn can disagree about
+    whether the resolved executor can run here.
     """
 
     endpoint, endpoint_source, default_reason = _resolve_manager_endpoint(
@@ -486,7 +493,9 @@ def manager_channel_binding(
     credential_env = ""
     execution_profile: str | None = None
     if executor_kind == MANAGER_EXECUTOR_KIND_MANAGED:
-        managed = managed_executor_binding(endpoint, environ=environ)
+        managed = managed_executor_binding(
+            endpoint, environ=environ, module_probe=module_probe
+        )
         credential_env = str(managed.get("credential_env") or "")
         execution_profile = managed.get("execution_profile")
         available: bool | None = managed.get("available")
