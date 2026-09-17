@@ -530,14 +530,14 @@ class ChatActionNormalizationMixin:
             # and the host's shipped action kinds, and the apply re-validates the
             # same payload with the host's own facts before it creates anything,
             # so the stored parameters are never the thing that authorizes work.
-            validate_steward_team_plan_preview(
+            admitted = validate_steward_team_plan_preview(
                 plan,
                 registered_agent_ids=registered_agent_ids_for_goal(goal),
                 supported_action_kinds=sorted(TODO_ACTION_KIND_ADVANCEMENT_VALUES),
             )
             return {
                 "goal_id": goal_id,
-                "plan": dict(plan),
+                "plan": admitted,
                 "requested_by": _opaque(
                     values.get("requested_by") or "owner", field="requested_by"
                 ),

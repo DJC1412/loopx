@@ -3,7 +3,7 @@ import {
   isStaleActionFailure,
 } from "../../../../../../loopx/control_plane/presentation/action_review_plan.js";
 import { refreshAttention } from "./attention-details";
-import { teamPlanFields, teamPlanGoalId, teamPlanLaneCount } from "./team-plan-preview";
+import { teamPlanAssignments, teamPlanAppliedLine, teamPlanAppliedOutcome, teamPlanFields, teamPlanGoalId, teamPlanLaneCount, teamPlanReceiptGapLanes } from "./team-plan-preview";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent } from "react";
 import { AlertCircle, Bot, CalendarClock, FileText, ListPlus, MessageCircleQuestion, Paperclip, Plus, RefreshCw, Send, X } from "lucide-react";
 
@@ -564,7 +564,9 @@ function workspaceProposal(proposal: TypedActionProposal, t: WorkspaceTranslate)
   const localizedSummary = proposal.action_kind === "operation.execute"
     ? operationTitle
     : proposal.action_kind === "team.plan"
-    ? t("proposal.summary.teamPlan", {
+    ? proposal.status === "applied"
+      ? teamPlanAppliedLine(teamPlanAppliedOutcome(proposal.receipt), t)
+      : t("proposal.summary.teamPlan", {
       goal: teamPlanGoalId(proposal.normalized_parameters),
       count: teamPlanLaneCount(proposal.normalized_parameters),
     })
@@ -593,7 +595,7 @@ function workspaceProposal(proposal: TypedActionProposal, t: WorkspaceTranslate)
     impact: proposal.action_kind === "operation.execute"
       ? t("proposal.impact.operation")
       : proposal.action_kind === "team.plan"
-      ? t("proposal.impact.teamPlan")
+      ? proposal.status === "applied" ? t("proposal.teamPlan.assignedHint") : t("proposal.impact.teamPlan")
       : proposal.action_kind === "goal.create"
       ? t("proposal.impact.goalCreate")
       : proposal.action_kind === "goal.lifecycle" && lifecycleOperation === "stop"
@@ -618,7 +620,7 @@ function workspaceProposal(proposal: TypedActionProposal, t: WorkspaceTranslate)
           ? t("proposal.primary.operationResultVerified")
           : t("proposal.primary.operationResultPending")
         : t("proposal.primary.operationGroup")
-      : proposal.action_kind === "team.plan" ? t("proposal.primary.teamPlan")
+      : proposal.action_kind === "team.plan" ? t(proposal.status === "applied" ? "proposal.teamPlan.viewResult" : "proposal.primary.teamPlan")
       : proposal.action_kind === "goal.create" ? t("proposal.primary.goalCreate")
       : proposal.action_kind === "goal.lifecycle" && lifecycleOperation === "stop"
         ? t("proposal.primary.lifecycleStop")
@@ -634,6 +636,11 @@ function workspaceProposal(proposal: TypedActionProposal, t: WorkspaceTranslate)
       && reviewPlan.interaction !== "completed"
       ? "error"
       : proposalStatus(proposal.status),
+    teamPlanOutcome: proposal.action_kind === "team.plan" ? teamPlanAppliedOutcome(proposal.receipt) ?? undefined : undefined,
+    teamPlanAssignments: proposal.action_kind === "team.plan" ? teamPlanAssignments(proposal.receipt, proposal.normalized_parameters) : undefined,
+    teamPlanGapLanes: proposal.action_kind === "team.plan"
+      ? teamPlanReceiptGapLanes(proposal.receipt, proposal.normalized_parameters)
+      : undefined,
     title: localizedSummary,
   };
 }
@@ -1352,7 +1359,11 @@ export function PersonalWorkspacePage({
       presentation?: "drawer" | "feedback";
     } = {},
   ) {
-    if (proposal.reviewPlan && !proposal.reviewPlan.canApply) return;
+    // A failed/uncertain assignment retries its original authorized operation.
+    // The server still revalidates admission or recovers its immutable receipt.
+    const retryTeamAssignment = proposal.actionKind === "team.plan" && proposal.status === "error"
+      && ["apply_failed", "readback_unverified"].includes(proposal.reviewPlan?.reason ?? "");
+    if (proposal.reviewPlan && !proposal.reviewPlan.canApply && !retryTeamAssignment) return;
     const showDrawer = options.presentation !== "feedback";
     const inferredLifecycleChange = proposal.actionKind === "goal.lifecycle"
       && proposal.goalId

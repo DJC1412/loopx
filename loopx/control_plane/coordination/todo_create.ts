@@ -146,12 +146,13 @@ export function planCoordinationTodoCreate(
   rawInput: CoordinationTodoCreateInput,
   todos: ReadonlyMap<string, JsonObject>,
   readModelSchema: unknown,
+  identity: "role_text" | "operation_lane" = "role_text",
 ): CoordinationTodoCreateResult {
   const input = normalizeCreateInput(rawInput);
-  const duplicate = [...todos.values()].find((todo) =>
+  const duplicate = identity === "role_text" ? [...todos.values()].find((todo) =>
     todo.role === input.todo.role && todo.archive_state === "active" &&
-    todo.status !== "done" && todo.status !== "deferred" && todo.text === input.todo.text);
-  if (duplicate !== undefined) return semanticDuplicateResult(input.todo, duplicate, null, null);
+    todo.status !== "done" && todo.status !== "deferred" && todo.text === input.todo.text) : undefined;
+  if (identity === "role_text" && duplicate !== undefined) return semanticDuplicateResult(input.todo, duplicate, null, null);
   if (todos.has(String(input.todo.todo_id))) {
     return failure("todo_already_exists", "Todo id already exists in canonical authority", {todo_id: input.todo.todo_id});
   }

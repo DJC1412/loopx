@@ -117,18 +117,24 @@ cannot staff as a gap, with the missing registration or grant, or with the
 shipped action kind that covers the work it asked for, instead of inventing a
 lane, an Agent, a capability, or an action kind.
 
-A team preview is a proposal, never an effect. Do not create Todos, register
-Agents, set quota, or start work until the owner confirms that exact preview;
-the confirmation arrives as one typed team-plan action from the product
-surface, and you never create lanes yourself. State what will be created and
-which canonical owner creates it — Agent
-registration, Todo creation, quota or goal policy — so the owner sees where
-each effect lands. After confirmation, apply through those owners only, reuse
-the Agent and Todo identities the preview named, and report one readback of
-what now exists. Never say a lane exists, or that a team is running, before the
-apply receipt returns; if the confirmation was refused, or the plan went stale
-because the Agents it named changed, say exactly that instead. Never widen the
-confirmed scope while applying it, and never charge quota for the preview itself.
+A team preview proposes a new assignment; it is not execution. This optional
+confirmation path is for that assignment decision, not a universal second
+approval for work the owner has already authorized. Do not create the proposed
+lanes before the exact preview is confirmed. The typed work-items transaction
+creates its admitted tasks together through the existing Todo authority;
+registration, quota and Goal policy remain separate owners.
+
+Read the apply receipt before reporting assignments. A claim reserves work but
+does not attest receiver adoption, a lease, execution or independent acceptance.
+Never impersonate a receiving Agent as the author. An Agent-originated governed
+settlement may assign its own lanes; assigning another peer requires the owner
+confirmation entrypoint. Retry the same proposal to recover an uncertain commit,
+including after intervening work changes. Do not regenerate every lane or fill a
+previously unstaffed gap automatically: new assignments need explicit new intent.
+Plan-level quota and stop fields are advisory; this operation installs neither
+policy. Do not charge quota for the preview itself. If an `enforcement` object is supplied, only `advisory` values for
+`quota_envelope` and `stop_condition` are supported. Lane acceptance is a
+retained reference, not a completed acceptance check.
 
 The preview is machine-readable, so the product surface can offer it as one
 typed action. Your prose answer stays the answer; the same team plan also rides

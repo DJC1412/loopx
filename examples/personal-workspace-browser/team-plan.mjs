@@ -15,7 +15,7 @@ const PROPOSAL_ID = "proposal-team-plan-fixture";
 const MANAGER_PROPOSAL_ID = "proposal-team-plan-manager-fixture";
 // The manager-channel card is deliberately a different plan from the Goal-scoped
 // one, so a row in the manager conversation cannot be the Goal's card leaking in.
-const MANAGER_PROPOSAL_TITLE = "为 product-release 配出 3 条 lane 的团队";
+const MANAGER_PROPOSAL_TITLE = "为 product-release 分配 3 项任务";
 const READY_TODO = "Implement the bounded intake";
 const GAP_TODO = "Independently review the intake";
 
@@ -24,7 +24,7 @@ function teamPlanProposal() {
     schema_version: "loopx_chat_action_proposal_v1",
     proposal_id: PROPOSAL_ID,
     action_kind: "team.plan",
-    summary: "为 product-release 配出 2 条 lane 的团队",
+    summary: "为 product-release 分配 2 项任务",
     normalized_parameters: {
       goal_id: GOAL_ID,
       plan: {
@@ -146,7 +146,7 @@ export const teamPlanScenario = {
       await page.locator(".personal-goal-link", { hasText: "Product Release" }).click();
       await page.locator(".personal-goal-tabs button", { hasText: "Chat" }).click();
 
-      const row = page.locator(".personal-proposal-row", { hasText: "配出 2 条 lane" });
+      const row = page.locator(".personal-proposal-row", { hasText: "分配 2 项任务" });
       try {
         await row.waitFor({ state: "visible", timeout: 15_000 });
       } catch (error) {
@@ -167,13 +167,13 @@ export const teamPlanScenario = {
         "a ready lane shows its first bounded Todo with its priority and action kind",
       );
       check(
-        previewText.includes("验收: the bounded Todo is created through the canonical owner"),
+        previewText.includes("验收参考: the bounded Todo is created through the canonical owner"),
         "a ready lane shows its acceptance signal",
       );
       check(
         previewText.includes("agent-reviewer")
-        && previewText.includes("未配齐")
-        && previewText.includes("agent_not_registered")
+        && previewText.includes("待安排")
+        && previewText.includes("尚未加入此目标")
         && previewText.includes(GAP_TODO),
         "a gap lane says it is unstaffed, names the reason, and keeps the work it did not staff",
       );
@@ -181,7 +181,7 @@ export const teamPlanScenario = {
         previewText.includes("配额包络") && previewText.includes("slots: 4") && previewText.includes("停止条件"),
         "the quota envelope and the stop condition render",
       );
-      check(previewText.includes("确认后会通过既有 owner"), "the card states what confirming does");
+      check(previewText.includes("确认后分配可安排的任务"), "the card states what confirming does");
       check(
         !/(已创建|已经创建|lanes created|已组建)/u.test(previewText),
         "the card never claims a lane already exists before confirmation",
@@ -192,7 +192,7 @@ export const teamPlanScenario = {
         animations: "disabled",
       });
 
-      const confirm = drawer.getByRole("button", { name: "确认并组建各 lane", exact: true });
+      const confirm = drawer.getByRole("button", { name: "确认分配", exact: true });
       check(await confirm.count() === 1, "exactly one confirmation control is offered");
       check(await confirm.isEnabled(), "the validated preview is confirmable");
       await confirm.click();
@@ -205,8 +205,18 @@ export const teamPlanScenario = {
         "confirming sends exactly one apply for the confirmed proposal",
       );
       check(api.durableWriteCount === 1, "the confirmed apply performed exactly one durable write");
-      await drawer.getByText("已应用，LoopX 状态将刷新。", { exact: true })
+      await drawer.getByText("已分配 1 项，1 项待安排", { exact: true })
         .waitFor({ state: "visible", timeout: 15_000 });
+      const appliedText = await drawer.innerText();
+      check(appliedText.toLowerCase().includes("product-release") && appliedText.includes(READY_TODO), "the result retains its Goal and assigned task");
+      check(appliedText.includes(GAP_TODO) && appliedText.includes("待安排 · 尚未加入此目标"), "pending work names its task and actionable reason");
+      check(!appliedText.includes("team.plan") && !appliedText.includes("配额包络"), "protocol and original-plan details stay collapsed");
+      check(await drawer.getByRole("button", { name: "确认分配", exact: true }).count() === 0, "completed assignments remove the confirmation control");
+      await drawer.getByText("查看原计划", { exact: true }).click();
+      check(await drawer.getByText("配额包络", { exact: true }).isVisible(), "the original plan remains available on demand");
+      await drawer.getByText("查看原计划", { exact: true }).click();
+      const resultHeight = await drawer.locator(".personal-team-plan-result").evaluate((element) => element.getBoundingClientRect().height);
+      check(resultHeight < 400, "the assignment result remains a compact card");
       await page.screenshot({
         path: resolve(outputDir, "team-plan-applied.png"),
         fullPage: false,
@@ -236,6 +246,19 @@ export const teamPlanScenario = {
         fullPage: false,
         animations: "disabled",
       });
+      // A lost response occurs after the durable write. Retry must use the
+      // original operation, including its remaining gaps, without a new plan.
+      await managerCard.click();
+      api.loseNextTeamPlanResponse = true;
+      await drawer.getByRole("button", { name: "确认分配", exact: true }).click();
+      const retry = drawer.getByRole("button", { name: "重试分配", exact: true });
+      await retry.waitFor({ state: "visible" });
+      check(api.durableWriteCount === 2, "the uncertain manager apply committed once");
+      await retry.click();
+      await drawer.getByRole("heading", { name: "已恢复原分配结果", exact: true }).waitFor();
+      check(api.actionApplies.filter((id) => id === MANAGER_PROPOSAL_ID).length === 2, "retry uses the same proposal identity");
+      check(api.durableWriteCount === 2, "recovery does not create another assignment");
+      check((await drawer.innerText()).includes("待安排 · 尚未加入此目标"), "recovery preserves the original unassigned work");
       // The harness collects both uncaught page errors and console errors; a
       // dev-server resource status is not a client-side exception, so only the
       // former is a failure here.
@@ -245,8 +268,8 @@ export const teamPlanScenario = {
         `no client-side exception was raised (${scriptErrors.join(" | ")})`,
       );
       check(
-        failedResponses.length === 0,
-        `no LoopX API call failed while confirming the plan (${failedResponses.join(" | ")})`,
+        failedResponses.length === 1 && failedResponses[0].includes(`503 ${new URL(url).origin}/api/actions/${MANAGER_PROPOSAL_ID}/apply`),
+        `only the injected lost response failed (${failedResponses.join(" | ")})`,
       );
     } finally {
       await context.close();

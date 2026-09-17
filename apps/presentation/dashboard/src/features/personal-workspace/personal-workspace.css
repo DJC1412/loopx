@@ -1030,6 +1030,16 @@
 .personal-proposal-card dl div { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 10px; font-size: 11.5px; }
 .personal-proposal-card dt { color: var(--pw-faint); }
 .personal-proposal-card dd { margin: 0; overflow-wrap: anywhere; }
+/* Completed assignments lead with results; proposal details stay on demand. */
+.personal-context-drawer .personal-team-plan-result { border-color: var(--pw-line); background: var(--pw-card); }
+.personal-context-drawer .personal-team-plan-result h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.personal-context-drawer .personal-team-plan-result > p { margin: 16px 0 0; font-weight: 400; color: var(--pw-muted); }
+.personal-team-plan-result .personal-team-plan-assignments { gap: 16px; margin: 20px 0; }
+.personal-team-plan-result .personal-team-plan-assignments > div { grid-template-columns: minmax(0, 1fr); gap: 4px; font-size: 13px; }
+.personal-team-plan-result .personal-team-plan-assignments dt { color: var(--pw-muted); font-size: 12px; }
+.personal-team-plan-result .is-pending dd { color: var(--pw-muted); }
+.personal-team-plan-result details { border-top: 1px solid var(--pw-line); margin-top: 16px; padding-top: 12px; }
+.personal-team-plan-result summary { cursor: pointer; font-size: 12px; color: var(--pw-muted); }
 .personal-proposal-state { display: flex; align-items: center; gap: 7px; padding: 10px 12px; margin: 10px 0 0; border-radius: 9px; font-size: 11px; }
 .personal-proposal-state.is-applied { background: var(--pw-green-bg); color: var(--pw-green); }
 .personal-proposal-state.is-stale, .personal-proposal-state.is-error { background: var(--pw-red-bg); color: var(--pw-red); }

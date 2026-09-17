@@ -1,3 +1,5 @@
+import {previewTeamPlan, planTeamTransaction, teamTransactionIdentity} from "./work_items/team_plan.ts";
+import {commitLocalTeamPlan} from "./work_items/team_plan_authority.ts";
 import {planHandoffMode} from "./coordination/handoff_mode_policy.ts";
 import {setLocalHandoffMode} from "./coordination/handoff_mode_runtime.ts";
 import {projectOwnershipObservation} from "./coordination/ownership_observation.ts";
@@ -494,6 +496,10 @@ export function createEffectRuntimeHandlers(
     ["coordination.local_authority.todo_continuation", continueLocalTodo],
     ["coordination.local_authority.todo_claim", claimLocalCoordinationTodo],
     ["coordination.local_authority.todo_create", createLocalCoordinationTodo],
+    ["work_items.team_plan.preview", previewTeamPlan],
+    ["work_items.team_plan.plan", planTeamTransaction],
+    ["work_items.team_plan.identity", value => teamTransactionIdentity(requiredObject(value, "team plan request"))],
+    ["work_items.team_plan.commit", commitLocalTeamPlan],
     ["coordination.local_authority.todo_update", updateLocalCoordinationTodo],
     ["coordination.local_authority.monitor_poll", pollLocalCoordinationMonitor],
     ["coordination.handoff_mode.plan", planHandoffMode],
