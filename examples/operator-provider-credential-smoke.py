@@ -59,6 +59,19 @@ def fail(message: str) -> None:
     raise SystemExit(f"operator provider credential smoke failed: {message}")
 
 
+def _runtime_installed(*_args: object, **_kwargs: object) -> bool:
+    """Report the optional managed runtime as installed.
+
+    This smoke is about which credential authenticates the managed host, not
+    about whether this host happens to have that runtime on disk, so it must not
+    read the machine it runs on. The typed ``dsh_runtime_unavailable`` refusal is
+    covered by ``examples/loopx-turn-managed-executor-binding-smoke.py`` and
+    ``tests/test_turn_managed_executor_binding.py``.
+    """
+
+    return True
+
+
 class _Handler(OperatorProviderRequestMixin):
     """Drive the real request mixin without opening a socket."""
 
@@ -133,7 +146,9 @@ def main() -> None:
             fail("an unconfigured machine must keep the individual default host")
 
         refused = managed_executor_binding(
-            "dsh", environ=operator_provider_environ(runtime_root)
+            "dsh",
+            environ=operator_provider_environ(runtime_root),
+            module_probe=_runtime_installed,
         )
         if refused.get("unavailable_reason") != OPERATOR_CREDENTIAL_UNCONFIGURED:
             fail(f"the managed host must name the missing credential: {refused}")
