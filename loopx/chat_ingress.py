@@ -89,4 +89,3 @@ class ChatIngressStore:
         rows = [_read_json(path) for path in (self._session_dir(session_id) / "ingress").glob("*.json")]
         return sorted((row for row in rows if row.get("mode") in {"loopx_queue", "loopx_inbox"}),
                       key=lambda row: (row.get("created_at", ""), row.get("client_ingress_id", "")))
-

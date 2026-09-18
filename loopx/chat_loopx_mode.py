@@ -602,4 +602,3 @@ def handle_loopx_request(handler, session_id: str, *, apply: bool = False) -> No
         handler._send_error(str(exc), status=409, error_code="loopx_mode_unavailable")
     except Exception:
         handler._send_error("LoopX mode could not access its configured executor or bindings. Check the local configuration and reconnect the conversation.", status=409, error_code="loopx_mode_unavailable")
-
