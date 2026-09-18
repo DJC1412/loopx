@@ -393,3 +393,36 @@ def test_budget_limit_interrupts_inflight_work_without_waiting_for_another_reque
     )
     assert response["gate"] and "budgetLimited" in response["message"]
     assert any(m == "interrupt" for m, _ in host.calls)
+
+
+def test_external_queued_message_cannot_activate_local_owner_continuation(
+    tmp_path, monkeypatch
+):
+    host = Host(tmp_path, monkeypatch)
+    store = ChatSessionStore(tmp_path / "runtime")
+    controller = ChatRuntimeController(store=store, codex_bin="codex")
+    session = store.create_session(
+        goal_id="fixture",
+        agent_id="codex",
+        adapter_kind="codex_app_server",
+        upstream_thread_id=host.session.thread_id,
+        upstream_mode="chat",
+        channel_id="goal.fixture",
+    )
+    turn, _ = store.create_queued_turn(
+        session["session_id"],
+        client_turn_id="external",
+        message="/goal start --tokens 1000 Analyze",
+        origin="lark",
+    )
+    controller._run_turn(
+        session_id=session["session_id"],
+        turn_id=turn["turn_id"],
+        message=turn["message"],
+        attachments=[],
+        adapter=CodexAppServerAdapter(host.session),
+    )
+    done = store.load_turn(session["session_id"], turn["turn_id"])
+    assert done["status"] == "failed" and "local owner" in done["error"]
+    assert not host.calls
+    controller.close()

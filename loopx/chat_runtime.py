@@ -661,7 +661,10 @@ class ChatRuntimeController:
             )
         reusable: ChatRuntimeAdapter | None = None
         legacy_project_context = (conversation_scope(session)["kind"] == "owner_goal"
-            and session.get("coordination_context_version") != PROJECT_CONTEXT_VERSION)
+            and session.get("coordination_context_version") != PROJECT_CONTEXT_VERSION
+            # A context/tool refresh cannot discard a native Goal and its usage.
+            # Keep this binding; a new Session explicitly selects new tools.
+            and session.get("upstream_mode") != CODEX_GOAL_CHAT_MODE)
         with self.lock:
             current = self.adapters.get(session_id)
             manager_profile_changed = bool(
@@ -806,7 +809,8 @@ class ChatRuntimeController:
                 if session["channel_id"] == "manager":
                     changes["goal_id"] = MANAGER_AGENT_GOAL_ID
                 self.store.update_session(session_id, **changes)
-            elif conversation_scope(session)["kind"] == "owner_goal":
+            elif (conversation_scope(session)["kind"] == "owner_goal"
+                  and session.get("upstream_mode") != CODEX_GOAL_CHAT_MODE):
                 self.store.update_session(session_id, coordination_context_version=PROJECT_CONTEXT_VERSION)
             self.store.restore_managed_session_if_idle(
                 session_id,

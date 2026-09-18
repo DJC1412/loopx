@@ -38,7 +38,9 @@ The host must support the experimental app-server `thread/goal/*` APIs.
   A timeout pauses work; explicit resume continues the same thread. Browser
   reconnect observes the existing local turn. Service recovery pauses the
   native Goal before accepting more work; it never silently starts a replacement
-  thread. Stop or close the Chat service before rolling back to an older build.
+  thread. A coordination-tool upgrade also preserves native sessions and their
+  recorded tool version; start a new Session explicitly to select upgraded tools.
+  Stop or close the Chat service before rolling back to an older build.
 
 The native driver supplies the continuation; there is no business-phase script
 and no second LoopX scheduler. Multiple native turns remain one observed Chat
@@ -62,7 +64,7 @@ their independent profiles, work commitments and execution/acceptance bindings.
 
 This stage qualifies read-only conversation continuity. Scoped conversational
 handoff is the separate [#4696](https://github.com/huangruiteng/loopx/pull/4696)
-companion. Automatically dispatching and accepting a heterogeneous team across
+companion, now merged. Automatically dispatching and accepting a heterogeneous team across
 native continuation cycles remains the next integration boundary; this feature
 does not claim that qualification, Ark/DSH driver parity or unattended daemon
 operation. The [session RFC](../architecture/rfcs/agent-session-execution-modes-v0.md)
@@ -90,7 +92,8 @@ peer 任务协调职责明确分配给已注册 Agent；跨项目管家继续负
 暂停沿用当前运行详情中的 **详情与操作 → 更多运行操作 → 中断本次运行**。
 随后在原对话 `resume`，或发送普通问题。普通消息不会再次启用持续推进。
 每次激活仍受 Chat 服务的硬超时约束；浏览器重连继续观察当前运行，服务恢复
-先暂停原生 Goal，再接受新工作。回滚旧版本前先停止本次运行或关闭 Chat 服务。
+先暂停原生 Goal，再接受新工作。协调工具升级也保留原生会话及其记录的工具版本；
+需要新版工具时显式创建新 Session。回滚旧版本前先停止本次运行或关闭 Chat 服务。
 
 此功能保留 Goal 对话的只读沙箱和原有模型/provider，不继承管家的 trusted-owner
 权限。原生 Goal 完成、暂停、阻塞与限额状态均会明确显示；它们不是 LoopX 的
