@@ -219,7 +219,7 @@ def main() -> int:
         assert "reuse the value on retries" in compact_prompt, prompt
         assert "guard; 2 stalls->replan" in compact_prompt, prompt
         assert "no-change=`surface_only`/no spend" in compact_prompt, prompt
-        assert "unchanged->`--vision-unchanged-reason`" in compact_prompt, prompt
+        assert "unchanged→真实`--vision-unchanged-reason`" in compact_prompt, prompt
 
     print("blocker-push-runtime-smoke ok")
     return 0
