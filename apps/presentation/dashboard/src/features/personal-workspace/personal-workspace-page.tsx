@@ -29,6 +29,8 @@ import {
 } from "../../data/chat";
 
 import { ChannelHeader } from "./channel-header";
+import { GoalLoopXMode } from "./goal-loopx-mode";
+import { sendLoopXMessage, type LoopXModeSnapshot } from "../../data/chat";
 import { ChannelTimeline } from "./channel-timeline";
 import { ContextDrawer } from "./context-drawer";
 import { GoalSidebar } from "./goal-sidebar";
@@ -772,6 +774,7 @@ function readImageAttachment(file: File, t: WorkspaceTranslate): Promise<Workspa
 }
 
 export function PersonalWorkspacePage({
+  conversationSessionId,
   agents = [{ agentId: "codex", available: true, capability: "代码与项目执行", label: "Codex" }],
   callbacks = {},
   goalArchiveLoadState = { error: null, phase: "ready" },
@@ -783,6 +786,7 @@ export function PersonalWorkspacePage({
   selectedGoalId: controlledGoalId,
   statusSourceControl,
 }: {
+  conversationSessionId?: string;
   agents?: WorkspaceAgentOption[];
   callbacks?: PersonalWorkspaceCallbacks;
   goalArchiveLoadState?: WorkspaceGoalArchiveLoadState;
@@ -818,6 +822,9 @@ export function PersonalWorkspacePage({
     }
   });
   const [sending, setSending] = useState(false);
+  const [loopxMode, setLoopxMode] = useState<LoopXModeSnapshot | null>(null);
+  const [loopxDelivery, setLoopxDelivery] = useState<"queue" | "inbox" | "steer">("queue");
+  const [loopxMessageReceipt, setLoopxMessageReceipt] = useState("");
   const [imageAttachments, setImageAttachments] = useState<WorkspaceImageAttachment[]>([]);
   const [imageAttachmentError, setImageAttachmentError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
@@ -1638,6 +1645,20 @@ export function PersonalWorkspacePage({
     const pendingImages = messageOverride ? [] : imageAttachments;
     const message = (messageOverride ?? composer).trim() || (pendingImages.length ? t("composer.imageAnalysisPrompt") : "");
     if (!message || sending) return;
+    if (loopxMode?.session_id === conversationSessionId && loopxMode?.enabled && loopxMode.active_turn_id && conversationSessionId) {
+      if (pendingImages.length) {
+        setImageAttachmentError(locale === "zh-CN" ? "运行中的消息投递暂不支持图片，请暂停后发送。" : "Pause execution before sending images.");
+        return;
+      }
+      setSending(true);
+      try {
+        const receipt = await sendLoopXMessage(conversationSessionId, message, loopxDelivery);
+        if (!messageOverride) setComposer("");
+        setLoopxMessageReceipt(locale === "zh-CN" ? `${loopxDelivery === "queue" ? "已排队，等待后续回合" : loopxDelivery === "inbox" ? "已进入收件箱" : "已提交纠偏"} · ${receipt.status}` : `${loopxDelivery}: ${receipt.status}`);
+      } catch (error) {setImageAttachmentError(error instanceof Error ? error.message : String(error));}
+      finally {setSending(false);}
+      return;
+    }
     if (!messageOverride) {
       setComposer("");
       setImageAttachments([]);
@@ -1999,6 +2020,12 @@ export function PersonalWorkspacePage({
             )}
           </div>
           <div className="personal-composer-wrap">
+            {selectedGoalId && selectedGoalTab === "chat" && !readOnly && selectedAgentId === "codex" && callbacks.onStartLoopX ? <GoalLoopXMode
+              onPrepare={() => callbacks.onPrepareLoopX!(selectedAgentId, selectedGoalId)}
+              key={`${selectedGoalId}:${selectedAgentId}`} sessionId={conversationSessionId} onChange={setLoopxMode}
+              onExecute={(operation, settings) => callbacks.onStartLoopX?.(operation, selectedAgentId, selectedGoalId, settings)}
+            /> : null}
+            {loopxMode?.session_id === conversationSessionId && loopxMode?.enabled && loopxMode.active_turn_id ? <label className="goal-loopx-message-mode">{locale === "zh-CN" ? "消息处理" : "Message delivery"}<select aria-label={locale === "zh-CN" ? "消息处理方式" : "Message delivery mode"} value={loopxDelivery} onChange={event => setLoopxDelivery(event.target.value as typeof loopxDelivery)}><option value="queue">{locale === "zh-CN" ? "下一轮处理" : "Next turn"}</option><option value="inbox">{locale === "zh-CN" ? "放入收件箱" : "Inbox"}</option><option value="steer">{locale === "zh-CN" ? "立即纠偏" : "Steer now"}</option></select><span role="status">{loopxMessageReceipt}</span></label> : null}
             {readOnly ? (
               <div className="personal-read-only-notice"><strong>{t("source.readOnlyNoticeTitle")}</strong><span>{t("source.readOnlyNoticeDescription")}</span></div>
             ) : <>

@@ -37,6 +37,8 @@ import {
   applyTodo,
   closeChatSession,
   createChatSession,
+  updateLoopXMode,
+  type LoopXModeSettings,
   fetchChatCapabilities,
   fetchChatHistory,
   fetchChatSession,
@@ -2094,7 +2096,18 @@ function PersonalGoalHome({
     }));
   }
 
-  async function sendManagerQuestion(rawQuestion: string, route?: { agentId?: string; goalId?: string | null; attachments?: WorkspaceImageAttachment[] }) {
+  async function prepareGoalConversation(goalId: string, agentId: string) {
+    const key = `${goalId}:${agentId}`;
+    const existing = sessionIds.current.get(key);
+    if (existing) return existing;
+    const session = await createChatSession(goalId, agentId, newSessionRequired.current.has(key) ? "new" : "resume_latest", "goal");
+    sessionIds.current.set(key, session.session_id);
+    newSessionRequired.current.delete(key);
+    recordRuntimeBinding(goalId, {agentId, resumable: true, sessionId: session.session_id, status: session.session.status});
+    return session.session_id;
+  }
+
+  async function sendManagerQuestion(rawQuestion: string, route?: { agentId?: string; goalId?: string | null; attachments?: WorkspaceImageAttachment[]; loopxMode?: {operation: "start" | "resume"; settings?: LoopXModeSettings} }) {
     const question = rawQuestion.trim();
     if (!question) {
       return;
@@ -2155,7 +2168,7 @@ function PersonalGoalHome({
     const sessionKey = `${targetContextId}:${selectedRoute.agentId}`;
     let streamingMessageId: number | null = null;
     try {
-      let sessionId = sessionIds.current.get(sessionKey);
+      let sessionId = targetContextId === "manager" ? sessionIds.current.get(sessionKey) : await prepareGoalConversation(targetContextId, selectedRoute.agentId);
       if (!sessionId) {
         const mode = newSessionRequired.current.has(sessionKey) ? "new" : "resume_latest";
         const sessionEndpoint =
@@ -2190,14 +2203,14 @@ function PersonalGoalHome({
           : `${t("header.manager")} · 跨 Goal`,
         text: "",
       });
-      const streamed = await sendChatTurnStreaming(sessionId, question, {
+      const streamOptions = {
         attachments: route?.attachments,
         signal: (() => {
           const controller = new AbortController();
           streamControllers.current.set(targetContextId, controller);
           return controller.signal;
         })(),
-        onDelta: (delta) => {
+        onDelta: (delta: string) => {
           streamedText += delta;
           if (streamingMessageId !== null) {
             updateManagerAssistantMessage(targetContextId, streamingMessageId, {
@@ -2205,7 +2218,7 @@ function PersonalGoalHome({
             });
           }
         },
-        onActivity: (label) => {
+        onActivity: (label: string) => {
           if (streamingMessageId === null) return;
           setMessagesByContext((messages) => ({
             ...messages,
@@ -2219,7 +2232,7 @@ function PersonalGoalHome({
             ),
           }));
         },
-        onPhase: (_phase, turnId) => {
+        onPhase: (_phase: string, turnId: string) => {
           if (streamingMessageId !== null) updateManagerAssistantMessage(targetContextId, streamingMessageId, { sourceTurnId: turnId });
           activeTurnIds.current.set(targetContextId, turnId);
           recordRuntimeBinding(targetContextId, {
@@ -2230,7 +2243,16 @@ function PersonalGoalHome({
             turnId,
           });
         },
-      });
+      };
+      let streamed;
+      if (route?.loopxMode) {
+        const accepted = await updateLoopXMode(sessionId, route.loopxMode.operation, route.loopxMode.settings);
+        if (!accepted.turn_id) throw new Error("LoopX execution returned no turn identity");
+        streamOptions.onPhase("turn.accepted", accepted.turn_id);
+        streamed = await resumeChatTurnStreaming(sessionId, accepted.turn_id, streamOptions);
+      } else {
+        streamed = await sendChatTurnStreaming(sessionId, question, streamOptions);
+      }
       const response = streamed.response;
       updateManagerAssistantMessage(targetContextId, streamingMessageId, {
         lines: response.gate ? [response.gate.summary, response.gate.next_action].filter(Boolean).slice(0, 2) : [],
@@ -2271,7 +2293,7 @@ function PersonalGoalHome({
         if (protectedPreview) return protectedPreview;
       }
     } catch (error) {
-      const userInterrupted = interruptedContexts.current.delete(targetContextId);
+      const userInterrupted = interruptedContexts.current.delete(targetContextId) || (Boolean(route?.loopxMode) && error instanceof ChatApiError && error.payload.error_code === "turn_interrupted");
       if (userInterrupted) {
         const interruptedMessage = {
           agentLabel: answerIdentityLabel(targetContextId, selectedRoute.label),
@@ -2894,11 +2916,14 @@ function PersonalGoalHome({
           onSelectAgent: chooseAgent,
           onSelectGoal: (goalId) => goalId ? openGoalChat(goalId) : openManagerChat(),
           onSendMessage: async (message, agentId, goalId, attachments) => sendManagerQuestion(message, { agentId, goalId, attachments }),
+          onPrepareLoopX: (agentId, goalId) => prepareGoalConversation(goalId, agentId),
+          onStartLoopX: (operation, agentId, goalId, settings) => { void sendManagerQuestion(operation === "start" ? "开启 LoopX 模式，持续推进当前 Goal。" : "恢复 LoopX 模式。", {agentId, goalId, loopxMode: {operation, settings}}); },
           onStartNewRunSession: startNewManagerSession,
         }}
         goalArchiveLoadState={goalArchiveLoadState}
         managerChannelBinding={managerChannelBinding}
         managerRuntime={managerRuntime}
+        conversationSessionId={runtimeBindings[contextId]?.sessionId}
         model={workspaceModel}
         readOnly={readOnly}
         selectedAgentId={selectedAgent.agentId}

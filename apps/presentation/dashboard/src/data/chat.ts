@@ -839,6 +839,31 @@ export async function interruptChatTurn(sessionId: string, turnId: string) {
   );
 }
 
+export type LoopXModeSettings = { agent_id: string; token_budget: number; execution_config: string };
+export type LoopXModeSnapshot = {
+  ok: true; session_id: string; enabled: boolean; active_turn_id: string | null; conversation_busy: boolean;
+  settings: Partial<LoopXModeSettings>;
+  native: { status: string; tokenBudget?: number; tokensUsed?: number };
+  registered_agents: string[]; paused: boolean; recovery_required: boolean;
+  members: Array<{id: string; agent_id: string; todo_id: string}>;
+  deliveries: Array<{operation_id: string; agent_id: string; todo_id: string; status: string}>;
+  ingress: Array<{client_ingress_id: string; mode: string; status: string}>;
+  turn_id?: string;
+};
+export function fetchLoopXMode(sessionId: string) {
+  return requestJson<LoopXModeSnapshot>(`/api/chat/sessions/${sessionId}/loopx`);
+}
+export function updateLoopXMode(sessionId: string, operation: string, settings?: LoopXModeSettings, operationId = crypto.randomUUID()) {
+  return requestJson<LoopXModeSnapshot>(`/api/chat/sessions/${sessionId}/loopx`, {
+    method: "POST", body: JSON.stringify({operation, operation_id: operationId, ...(settings ? {settings} : {})}),
+  });
+}
+export function sendLoopXMessage(sessionId: string, message: string, deliveryMode: "queue" | "inbox" | "steer") {
+  return requestJson<{ok: true; status: string; delivery_mode: string}>(`/api/chat/sessions/${sessionId}/loopx`, {
+    method: "POST", body: JSON.stringify({operation: "message", operation_id: crypto.randomUUID(), message, delivery_mode: deliveryMode}),
+  });
+}
+
 export async function sendChatTurnStreaming(
   sessionId: string,
   message: string,

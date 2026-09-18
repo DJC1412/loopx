@@ -416,6 +416,9 @@ export type PersonalWorkspaceCallbacks = {
     goalId: string | null,
     attachments?: WorkspaceImageAttachment[],
   ) => void | WorkspaceActionPreviewRequest | Promise<void | WorkspaceActionPreviewRequest>;
+  onPrepareLoopX?: (agentId: string, goalId: string) => Promise<string>;
+  onStartLoopX?: (operation: "start" | "resume", agentId: string, goalId: string,
+    settings?: import("../../data/chat").LoopXModeSettings) => void;
   onSelectAgent?: (agentId: string) => void;
   onSelectChannel?: (channel: WorkspaceChannel) => void;
   onSelectGoal?: (goalId: string | null) => void;
