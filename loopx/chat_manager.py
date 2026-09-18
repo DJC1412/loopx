@@ -615,6 +615,7 @@ def manager_skill_text() -> str:
 def manager_model_config(
     environ: dict[str, str] | None = None,
     *,
+    endpoint: str | None = None,
     machine_defaults: Mapping[str, Any] | None = None,
 ) -> dict[str, str]:
     """Return the manager host arguments: model and reasoning effort.
@@ -626,7 +627,9 @@ def manager_model_config(
     the bounded Turns it drives run the effort the operator configured once.
     """
 
-    endpoint = _resolve_manager_endpoint(
+    # An already selected Session endpoint outranks the machine's endpoint
+    # default. Explicit model/effort overrides retain their existing priority.
+    endpoint = endpoint or _resolve_manager_endpoint(
         environ, machine_defaults=machine_defaults
     )[0]
     model, _source = manager_model_resolution(

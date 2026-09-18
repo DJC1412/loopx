@@ -926,11 +926,13 @@ class CodexChatAgentSession:
             event_turn_id = _event_turn_id(message)
             if event_thread_id and event_thread_id != self.thread_id:
                 continue
+            # A restored native Goal can leave historical turn notifications.
+            # turn/start already returned the exact turn owned by this send.
+            if event_turn_id and turn_id and event_turn_id != turn_id:
+                continue
             if message.get("method") == "turn/started" and event_turn_id:
                 turn_id = event_turn_id
                 self.current_turn_id = turn_id
-            if event_turn_id and turn_id and event_turn_id != turn_id:
-                continue
             method = str(message.get("method") or "")
             params = message.get("params")
             if on_event:
