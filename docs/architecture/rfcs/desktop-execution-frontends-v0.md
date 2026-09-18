@@ -158,6 +158,14 @@ connections if the local broker preserves explicit Agent and channel routing.
 
 ### One ordered working conversation
 
+The baseline project coordinator surface is the existing **Goal → Chat**. A
+registered peer may carry that responsibility instead; neither choice creates
+a separate coordinator conversation or changes the steward's cross-Goal role.
+[Explicit Codex continuation](../../reference/goal-chat-continuation.md) reuses
+the message box, streamed run, existing interrupt control and original history.
+This read-only driver slice leaves scoped team execution/acceptance integration
+and Lark/other-provider parity as separate qualification requirements.
+
 In live-steering and queued-session modes, Web and Lark messages enter one
 serialized ingress stream for the selected Agent session. Each message records
 public-safe transport metadata such as `origin=web` or `origin=lark`, but origin

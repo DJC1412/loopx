@@ -224,6 +224,19 @@ from a probe, a transport, or a prompt.
 
 ### Reusable Agent operations and continuation ownership
 
+The existing frontend Goal Chat is the baseline conversational coordinator. The
+owner may instead assign peer task coordination to a registered Agent; that role
+does not itself create an Agent, transfer work authority or activate a driver.
+The local steward retains cross-Goal intake and owner attention. Conversation
+and peer coordinators reuse scoped delegation, independent acceptance and return.
+
+The [explicit Goal Chat continuation](../../reference/goal-chat-continuation.md)
+slice adds a Codex native Goal driver to the existing read-only conversation:
+start/status/resume, multi-turn observation, stop and same-thread recovery.
+Native completion is a host observation, not canonical acceptance. Automatic
+heterogeneous-team continuation and other provider drivers remain unqualified;
+this slice does not close the multi-Agent acceptance rows below.
+
 This proposed extension refines the managed-team delivery contract; it does not
 add CLI flags, promote a host, or change existing session/profile defaults.
 Keep three identities separate: the registered Agent, its current host session
