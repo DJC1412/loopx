@@ -103,6 +103,15 @@ coordination 路径使用同一份语言中立的 `coordination_state_contract_v
 仅将 typed read result 适配为兼容 summary。这是 contract 检查点，不是已经完成的
 CLI lifecycle cutover。
 
+### 后续任务批量捕获收敛
+
+[`capture-followups`](../../reference/canonical-followup-capture.md) 的完整批次筛选、
+全文去重、metadata 和 canonical CAS／历史回执由 TS 持有。Python 删除筛选与逐条
+add 决策，保留 legacy 锁／渲染／shadow 写入及 promoted provider transport／outbox。
+修复 500 字符展示截断误作身份及 continuation policy 丢失；覆盖完整混合图、竞争
+CAS、no-op 封存、lost acknowledgement 和真实 provider／只读快照演练。
+这是 T1／L2 的一个完整命令，不是 L7 shadow capture 连续性或新 Goal 默认切换。
+
 ### Lease 领取与生命周期收敛（2026-09-18）
 
 独立 acquire/接管和维护共用 local provider/source fence。`task_lease_acquire_decision.ts`

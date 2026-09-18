@@ -1282,6 +1282,12 @@ requires differential proof; record its deletion trigger when introduced.
 Current implementation status: Stage 1, the bounded Stage 2A proofs, and the
 shipped Stage 2B cutovers are in place:
 
+- [Follow-up capture](../../reference/canonical-followup-capture.md): TypeScript owns
+  complete batch selection, full-text duplicate identity, metadata and canonical
+  CAS/receipt recovery. Python retains one locked renderer/shadow write for
+  legacy Goals and provider transport/outbox for promoted Goals. This deletes
+  Python selection and per-item add decisions; it is T1/L2 command closure,
+  not L7 capture qualification or a new-Goal default change.
 - Turn settlement/commit: TypeScript owns preflight authorization,
   ordered-prefix and replay validation, provider failure classification,
   receipt construction, terminal closeout joining, and the canonical result.
