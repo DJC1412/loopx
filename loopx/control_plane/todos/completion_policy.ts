@@ -19,7 +19,7 @@ export const TODO_COMPLETION_POLICY_REQUEST_SCHEMA =
 export const TODO_COMPLETION_POLICY_RESULT_SCHEMA =
   "loopx_todo_completion_policy_result_v0";
 
-const CONTINUATION_POLICIES = [
+export const TODO_CONTINUATION_POLICIES = [
   "independent_handoff",
   "same_agent_non_delivery",
 ] as const;
@@ -188,12 +188,12 @@ function requireExcludedAgents(
 
 function continuationPolicy(
   value: string | null,
-): typeof CONTINUATION_POLICIES[number] {
+): typeof TODO_CONTINUATION_POLICIES[number] {
   const candidate = stripPythonWhitespace(String(value ?? "")).toLowerCase();
-  return CONTINUATION_POLICIES.includes(
-      candidate as typeof CONTINUATION_POLICIES[number],
+  return TODO_CONTINUATION_POLICIES.includes(
+      candidate as typeof TODO_CONTINUATION_POLICIES[number],
     )
-    ? candidate as typeof CONTINUATION_POLICIES[number]
+    ? candidate as typeof TODO_CONTINUATION_POLICIES[number]
     : "independent_handoff";
 }
 

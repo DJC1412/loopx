@@ -250,8 +250,9 @@ def todo_blocks(
     *,
     role: str | None = None,
     source_section: str | None = None,
+    text_limit: int | None = 500,
 ) -> list[dict[str, Any]]:
-    blocks = decode_todo_blocks(lines, start, end, visible=visible_markdown_lines(lines))
+    blocks = decode_todo_blocks(lines, start, end, visible=visible_markdown_lines(lines), text_limit=text_limit)
     for block in blocks:
         ensure_block_identity(block, role=role, source_section=source_section)
     return blocks

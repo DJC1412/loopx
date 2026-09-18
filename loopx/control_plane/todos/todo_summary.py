@@ -152,9 +152,9 @@ TASK_ORCHESTRATION_USER_BLOCKER_FIELDS = (
 )
 
 
-def normalize_todo_text(text: str, *, limit: int = 500) -> str:
+def normalize_todo_text(text: str, *, limit: int | None = 500) -> str:
     compact = " ".join(str(text or "").strip().split())
-    if len(compact) <= limit:
+    if limit is None or len(compact) <= limit:
         return compact
     return compact[: limit - 1].rstrip() + "…"
 

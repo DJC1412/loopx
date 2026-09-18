@@ -1,3 +1,5 @@
+import {planFollowupCapture} from "./todos/followup_capture.ts";
+import {captureLocalFollowups} from "./coordination/followup_capture_runtime.ts";
 import {selectDelegationBinding, transitionDelegationObservation} from "./collaboration/delegation.ts";
 import {resolveConversationScope} from "./collaboration/conversation_scope.ts";
 import {previewTeamPlan, planTeamTransaction, teamTransactionIdentity} from "./work_items/team_plan.ts";
@@ -505,6 +507,8 @@ export function createEffectRuntimeHandlers(
     ["coordination.local_authority.todo_continuation", continueLocalTodo],
     ["coordination.local_authority.todo_claim", claimLocalCoordinationTodo],
     ["coordination.local_authority.todo_create", createLocalCoordinationTodo],
+    ["todos.followup_capture.plan", planFollowupCapture],
+    ["coordination.local_authority.followup_capture", captureLocalFollowups],
     ["work_items.team_plan.preview", previewTeamPlan],
     ["work_items.team_plan.plan", planTeamTransaction],
     ["work_items.team_plan.identity", value => teamTransactionIdentity(requiredObject(value, "team plan request"))],

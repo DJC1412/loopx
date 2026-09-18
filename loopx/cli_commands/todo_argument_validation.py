@@ -10,6 +10,7 @@ TODO_OPTION_FIELDS = (
     ("--text", "text"),
     ("--follow-up", "followups"),
     ("--todo-id", "todo_id"),
+    ("--capture-operation-id", "capture_operation_id"),
     ("--claim-operation-id", "claim_operation_id"),
     ("--update-operation-id", "update_operation_id"),
     ("--update-expected-provider-revision", "update_expected_provider_revision"),
@@ -491,10 +492,10 @@ def validate_todo_capture_followups_options(args: argparse.Namespace) -> None:
         {
             "text", "followups", "evidence", "task_class", "action_kind",
             "continuation_policy", "required_write_scopes", "required_capabilities",
-            "target_capabilities", "required_decision_scopes", "state_file",
+            "target_capabilities", "required_decision_scopes", "state_file", "capture_operation_id",
         },
         "todo capture-followups only accepts --goal-id, --follow-up, optional "
-        "--text shorthand, --evidence, routing metadata, --project, --state-file, "
+        "--text shorthand, --evidence, routing metadata, --capture-operation-id, --project, --state-file, "
         "and --dry-run; unsupported: ",
     )
 
@@ -523,6 +524,8 @@ def validate_shared_todo_options(args: argparse.Namespace) -> None:
         raise ValueError(
             "--turn-instance-id is supported only by todo complete settlement"
         )
+    if getattr(args, "capture_operation_id", None) is not None and args.todo_command != "capture-followups":
+        raise ValueError("--capture-operation-id is supported only by todo capture-followups")
     if getattr(args, "update_operation_id", None) is not None and args.todo_command != "update":
         raise ValueError("--update-operation-id is supported only by todo update")
     if getattr(args, "update_expected_provider_revision", None) is not None and args.todo_command != "update":

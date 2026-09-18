@@ -599,6 +599,8 @@ def handle_todo_command(
                 evidence=args.evidence or "",
                 task_class=args.task_class,
                 action_kind=args.action_kind,
+                continuation_policy=args.continuation_policy,
+                capture_operation_id=args.capture_operation_id,
                 required_write_scopes=args.required_write_scopes,
                 required_capabilities=args.required_capabilities,
                 target_capabilities=args.target_capabilities,
