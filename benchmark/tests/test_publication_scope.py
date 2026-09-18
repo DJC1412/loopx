@@ -92,6 +92,7 @@ def test_lhtb_published_data_and_bilingual_copy_share_scope():
         "legacy_heartbeat",
         "new_heartbeat",
     }
+    primary_arms = {"plain", "native_goal", "new_heartbeat"}
     assert set(data["arms"]) == arms
     assert len(data["tasks"]) == len({row["task"] for row in data["tasks"]}) == 46
     assert all(set(row) == arms | {"task"} for row in data["tasks"])
@@ -107,4 +108,6 @@ def test_lhtb_published_data_and_bilingual_copy_share_scope():
     for localized in localized_copy.values():
         assert set(localized["armLabels"]) == arms
         assert set(localized["armKinds"]) == arms
-        assert {row[0] for row in localized["mechanismRows"]} == arms
+        # Historical arms remain available in the expandable score table, while
+        # the mechanism narrative intentionally follows the three primary arms.
+        assert {row[0] for row in localized["mechanismRows"]} == primary_arms

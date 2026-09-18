@@ -15,7 +15,7 @@
       ["04", "Task evidence", "#scores"]
     ],
     "resultEyebrow": "00 / Core result",
-    "resultTitle": "Higher mean reward than both baselines; no more strict solves than Plain.",
+    "resultTitle": "Higher mean reward than Plain and native Goal.",
     "resultBody": "LoopX averages 0.4948, Plain 0.4218, and native Goal 0.4475. At reward ≥ 0.95, they solve 7, 7, and 4 tasks respectively. Mean reward captures partial progress; full acceptance remains a separate outcome.",
     "summaryColumns": ["Execution", "Mean reward", "Solved ≥ 0.95", "Token usage", "USD"],
     "armLabels": {
@@ -170,7 +170,7 @@
       ["04", "逐题核对", "#scores"]
     ],
     "resultEyebrow": "00 / 核心结果",
-    "resultTitle": "均分高于两种基线，完整通过数尚未超过 Plain。",
+    "resultTitle": "均分高于 Plain 和原生 Goal。",
     "resultBody": "LoopX 为 0.4948，Plain 为 0.4218，原生 Goal 为 0.4475。以 Reward ≥ 0.95 计通过，三者分别为 7、7、4 题。均分反映部分进展，完整验收还需单独看。",
     "summaryColumns": ["执行方式", "平均 Reward", "通过 ≥ 0.95", "Token 用量", "USD"],
     "armLabels": {
