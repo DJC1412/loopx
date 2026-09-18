@@ -564,6 +564,8 @@ class CodexChatAgentSession:
                 raise session._runtime_error(
                     "Codex did not apply the requested manager reasoning effort."
                 )
+            session.model = thread_result.get("model") or model
+            session.reasoning_effort = thread_result.get("reasoningEffort") or reasoning_effort
             session.thread_id = _extract_id(thread_result, "thread", "threadId")
             if not session.thread_id:
                 raise session._runtime_error(

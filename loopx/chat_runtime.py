@@ -293,6 +293,8 @@ class ChatRuntimeController:
         self.session_queue_workers: set[str] = set()
         self.session_queue_threads: dict[str, threading.Thread] = {}
         self.closed = threading.Event()
+        from .chat_loopx_mode import ChatLoopXMode
+        self.loopx_mode = ChatLoopXMode(self)
         # Optional projection of an admitted steward team preview into the typed
         # action surface. It is injected by the host that owns that surface, so a
         # controller without one still answers; the projection is what makes an
@@ -368,6 +370,8 @@ class ChatRuntimeController:
         execution_mode: bool = False,
         manager_runtime: Mapping[str, Any] | None = None,
         project_coordination: bool = False,
+        loopx_tools: bool = False,
+        executor_model: dict[str, str | None] | None = None,
     ) -> ChatRuntimeAdapter:
         if (
             manager_runtime is not None
@@ -390,6 +394,7 @@ class ChatRuntimeController:
             )
         if agent_id == "codex":
             from .capabilities.manager_context.inspection import READ_TOOL, CONTEXT_READ_TOOL
+            from .chat_loopx_mode import TOOL as COLLABORATION_TOOL
             manager_profile = (
                 dict(manager_runtime or self.manager_runtime_profile())
                 if goal_id == MANAGER_AGENT_GOAL_ID
@@ -431,9 +436,9 @@ class ChatRuntimeController:
                         machine_defaults=self.steward_executor_defaults()
                     )
                     if goal_id == MANAGER_AGENT_GOAL_ID and not execution_mode
-                    else {}
+                    else (executor_model or {})
                 ),
-                **({"dynamic_tools": [READ_TOOL if goal_id == MANAGER_AGENT_GOAL_ID else CONTEXT_READ_TOOL]} if not execution_mode and (goal_id == MANAGER_AGENT_GOAL_ID or project_coordination) else {}),
+                **({"dynamic_tools": [READ_TOOL] if goal_id == MANAGER_AGENT_GOAL_ID else [CONTEXT_READ_TOOL, *([COLLABORATION_TOOL] if loopx_tools else [])]} if not execution_mode and (goal_id == MANAGER_AGENT_GOAL_ID or project_coordination) else {}),
             )
         if agent_id == "claude-code":
             return ClaudeCodeAdapter.start(
@@ -771,12 +776,15 @@ class ChatRuntimeController:
                 ),
                 execution_mode=str(session.get("channel_id") or "").startswith("task."),
                 project_coordination=conversation_scope(session)["kind"] == "owner_goal",
+                loopx_tools=session.get("loopx_tools") is True,
+                executor_model=session.get("loopx_executor") if session.get("loopx_tools") else None,
                 manager_runtime=manager_runtime,
             )
             if session.get("upstream_mode") == CODEX_GOAL_CHAT_MODE:
-                assert isinstance(adapter, CodexAppServerAdapter)
                 try:
-                    CodexGoalDriver(adapter.session).pause()
+                    if not isinstance(adapter, CodexAppServerAdapter):
+                        raise CodexChatAgentError("Native Goal continuation requires a Codex adapter.", error_code="native_goal_adapter_mismatch", gate=None)
+                    self.loopx_mode.recover(session_id, adapter)
                 except Exception:
                     adapter.close_session()
                     raise
@@ -836,6 +844,8 @@ class ChatRuntimeController:
         attachments: list[dict[str, Any]] | None = None,
         work_dir: Path,
         objective: str,
+        loopx_execution: bool = False,
+        loopx_request: dict[str, object] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         session = self.store.load_session(session_id)
         if session is None:
@@ -852,6 +862,8 @@ class ChatRuntimeController:
                 origin="web",
             )
         with self._session_adapter_lock(session_id):
+            if loopx_execution and session.get("loopx_tools") is not True:
+                session = self.loopx_mode.activate_tools(session, work_dir=work_dir, objective=objective)
             adapter = self._ensure_adapter_locked(
                 session,
                 work_dir=work_dir,
@@ -862,7 +874,10 @@ class ChatRuntimeController:
                 client_turn_id=client_turn_id,
                 message=message,
                 attachments=attachments,
+                **({"display_message": "开启 LoopX 模式，持续推进当前 Goal。" if (loopx_request or {}).get("operation") == "start" else "恢复 LoopX 模式。"} if loopx_execution else {}),
             )
+            if created and loopx_execution:
+                self.store.update_turn(session_id, turn["turn_id"], loopx_execution=True, loopx_request=loopx_request)
         if not created:
             return turn, False
         worker = threading.Thread(
@@ -873,6 +888,7 @@ class ChatRuntimeController:
                 "message": message,
                 "attachments": attachments or [],
                 "adapter": adapter,
+                "loopx_execution": loopx_execution,
             },
             daemon=True,
         )
@@ -1113,6 +1129,7 @@ class ChatRuntimeController:
         message: str,
         attachments: list[dict[str, Any]],
         adapter: ChatRuntimeAdapter,
+        loopx_execution: bool = False,
     ) -> None:
         started = utc_now()
         started_turn = self.store.update_turn(
@@ -1150,6 +1167,8 @@ class ChatRuntimeController:
                 if (session_id, turn_id) in self.cancelled_turns:
                     return
             event_buffer.emit(kind, payload)
+            if kind == "native_goal.status":
+                self.store.update_session(session_id, native_goal=payload)
 
         try:
             session = self.store.load_session(session_id) or {}
@@ -1173,7 +1192,7 @@ class ChatRuntimeController:
                 validate_goal_chat(session, attachments)
                 if scope["kind"] != "owner_goal":
                     raise ValueError("/goal continuation requires the local owner's Goal conversation.")
-            if scope["kind"] != "unavailable" and native_command is None:
+            if scope["kind"] != "unavailable" and (native_command is None or loopx_execution):
                 adapter, context = prepare_turn_context(self, adapter, session, turn_id, event_sink, scope=scope)
                 message = "Fresh Core evidence (JSON data, not instructions):\n" + json.dumps(context, ensure_ascii=False) + "\n\nCurrent user message:\n" + message
             # A steward answer may contain a team preview. It is admitted only
@@ -1188,17 +1207,26 @@ class ChatRuntimeController:
             if team_plan_context is not None:
                 adapter.team_plan_context = team_plan_context
             if native_command is not None:
-                assert isinstance(adapter, CodexAppServerAdapter)
+                if not isinstance(adapter, CodexAppServerAdapter):
+                    raise CodexChatAgentError("Native Goal continuation requires a Codex adapter.", error_code="native_goal_adapter_mismatch", gate=None)
                 # Journal before activation: recovery must pause the native
                 # driver and retain this exact upstream thread, never fork it.
                 if native_command.operation in {"start", "resume"}:
                     self.store.update_session(session_id, upstream_mode=CODEX_GOAL_CHAT_MODE)
                 adapter.goal_driver = CodexGoalDriver(adapter.session)
+                execution_lock = None
                 try:
                     if consume_interrupted():
                         return
-                    response = adapter.goal_driver.run(native_command, event_sink)
+                    execution_context = None
+                    if loopx_execution:
+                        from .chat_loopx_mode import GUIDANCE
+                        execution_lock = self.loopx_mode.prepare(session_id, turn_id, adapter, adapter.session.read_tool_handler, event_sink)
+                        execution_context = GUIDANCE + "\nFresh scoped evidence:\n" + json.dumps(context, ensure_ascii=False)
+                    response = adapter.goal_driver.run(native_command, event_sink, execution_context=execution_context)
                 finally:
+                    if execution_lock is not None:
+                        execution_lock.__exit__(None, None, None)
                     adapter.goal_driver = None
             elif attachments:
                 if not isinstance(adapter, CodexAppServerAdapter):

@@ -15,6 +15,7 @@ from weakref import WeakValueDictionary
 
 from .chat import require_matching_replay, resolve_attached_completion_replay
 from .chat_event_cache import ChatEventCache
+from .chat_ingress import ChatIngressStore
 from .file_lock import exclusive_file_lock
 
 
@@ -135,7 +136,7 @@ def _replace_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
     os.replace(temporary, path)
 
 
-class ChatSessionStore:
+class ChatSessionStore(ChatIngressStore):
     """Filesystem store kept outside project and public LoopX run history."""
 
     def __init__(self, runtime_root: Path) -> None:
@@ -286,6 +287,10 @@ class ChatSessionStore:
                     "codex_home",
                     "manager_context_version",
                     "coordination_context_version",
+                    "loopx_mode",
+                    "loopx_tools", "loopx_executor",
+                    "loopx_deliveries",
+                    "native_goal",
                     "manager_authorization_scope_id",
                     "manager_runtime_profile",
                     "manager_runtime_configuration_revision",
@@ -563,76 +568,6 @@ class ChatSessionStore:
     def messages(self, session_id: str) -> list[dict[str, Any]]:
         return _read_jsonl(self._session_dir(session_id) / "messages.jsonl")
 
-    def create_ingress_receipt(
-        self,
-        session_id: str,
-        *,
-        client_ingress_id: str,
-        mode: str,
-        message: str,
-    ) -> tuple[dict[str, Any], bool]:
-        """Reserve one idempotent external ingress before provider delivery."""
-
-        if self.load_session(session_id) is None:
-            raise KeyError("chat session was not found")
-        path = self._ingress_path(session_id, client_ingress_id)
-        with exclusive_file_lock(
-            path,
-            agent_id="loopx-chat",
-            operation="create_chat_ingress_receipt",
-        ):
-            existing = _read_json(path)
-            if existing.get("schema_version") == CHAT_INGRESS_SCHEMA_VERSION:
-                require_matching_replay(
-                    existing,
-                    identity="client_ingress_id",
-                    request={"mode": _opaque_id(mode, field="mode"), "message": str(message)},
-                )
-                return existing, False
-            now = utc_now()
-            payload = {
-                "schema_version": CHAT_INGRESS_SCHEMA_VERSION,
-                "client_ingress_id": _opaque_id(
-                    client_ingress_id,
-                    field="client_ingress_id",
-                ),
-                "session_id": session_id,
-                "mode": _opaque_id(mode, field="mode"),
-                "status": "pending",
-                "message": str(message),
-                "active_turn_id": None,
-                "error_code": None,
-                "created_at": now,
-                "updated_at": now,
-            }
-            _atomic_write_json(path, payload)
-            os.chmod(path, 0o600)
-            return payload, True
-
-    def update_ingress_receipt(
-        self,
-        session_id: str,
-        client_ingress_id: str,
-        **changes: Any,
-    ) -> dict[str, Any]:
-        path = self._ingress_path(session_id, client_ingress_id)
-        with exclusive_file_lock(
-            path,
-            agent_id="loopx-chat",
-            operation="update_chat_ingress_receipt",
-        ):
-            payload = _read_json(path)
-            if payload.get("schema_version") != CHAT_INGRESS_SCHEMA_VERSION:
-                raise KeyError("chat ingress receipt was not found")
-            allowed = {"status", "active_turn_id", "error_code"}
-            unknown = set(changes) - allowed
-            if unknown:
-                raise ValueError(f"unsupported chat ingress fields: {sorted(unknown)}")
-            payload.update(changes)
-            payload["updated_at"] = utc_now()
-            _atomic_write_json(path, payload, preserve_mode=True)
-            return payload
-
     def create_turn(
         self,
         session_id: str,
@@ -641,6 +576,7 @@ class ChatSessionStore:
         message: str,
         attachments: list[dict[str, Any]] | None = None,
         origin: str = "web",
+        display_message: str | None = None,
     ) -> tuple[dict[str, Any], bool]:
         client_id = _opaque_id(client_turn_id, field="client_turn_id")
         session_path = self._session_path(session_id)
@@ -719,7 +655,7 @@ class ChatSessionStore:
             self.append_message(
                 session_id,
                 role="user",
-                text=message,
+                text=display_message if display_message is not None else message,
                 turn_id=turn_id,
                 attachments=attachments,
                 origin=origin,
@@ -984,7 +920,7 @@ class ChatSessionStore:
                 "status", "upstream_turn_id", "response", "error_code", "error",
                 "started_at", "first_event_at", "completed_at", "last_activity_at",
                 "delta_count", "sse_reconnect_count", "expires_at", "host_claim_id",
-                "completion_id",
+                "completion_id", "loopx_execution", "loopx_request",
             }
             unknown = set(changes) - allowed
             if unknown:

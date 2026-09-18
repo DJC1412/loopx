@@ -426,3 +426,56 @@ def test_external_queued_message_cannot_activate_local_owner_continuation(
     assert done["status"] == "failed" and "local owner" in done["error"]
     assert not host.calls
     controller.close()
+
+
+def test_mode_resume_injects_fresh_context_once_without_replacing_objective(tmp_path, monkeypatch):
+    host = Host(tmp_path, monkeypatch, goal=native_goal("paused"),
+                events=[begin("one"), end("one"), begin("two"), complete, end("two")])
+    received = []
+    monkeypatch.setattr(host.session, "steer", lambda text, **kw: received.append((text, kw)))
+    host.driver.run(parse_native_goal_command("/goal resume --tokens 2000"), lambda *a: None,
+                    execution_context="Fresh scoped facts and complete report requirement")
+    assert received == [("Fresh scoped facts and complete report requirement", {"expected_turn_id": "one"})]
+    assert host.goal["objective"] == "Original objective"
+
+
+def test_structured_reports_survive_later_native_blocked_summary(tmp_path, monkeypatch):
+    import json
+    def answer(message):
+        return message + "\n<loopx-review-json>" + json.dumps({"schema_version": "loopx_chat_agent_response_v0", "message": message, "proposals": [], "gate": None}, ensure_ascii=False) + "</loopx-review-json>"
+    def block(host):
+        host.goal["status"] = "blocked"
+        return event("thread/goal/updated", goal=host.goal.copy())
+    host = Host(tmp_path, monkeypatch, events=[
+        begin("one"), delta(answer("Verified report: normalized FCF 40 → 25; source families 1."), "one"), end("one"),
+        begin("two"), block, delta(answer("Report task requires separate owner action."), "two"), end("two"),
+    ])
+    seen = []
+    response = host.driver.run(parse_native_goal_command("/goal start --tokens 10000 Verify"), lambda k, p: seen.append((k, p)))
+    assert "normalized FCF 40 → 25" in response["message"]
+    assert "separate owner action" in response["message"]
+    streamed = "".join(p["text"] for k, p in seen if k == "answer.delta")
+    assert "normalized FCF" in streamed and "separate owner action" in streamed
+
+
+def test_mismatched_adapter_is_typed_rejection_and_recovery_closes_it(tmp_path, monkeypatch):
+    store = ChatSessionStore(tmp_path / "runtime")
+    controller = ChatRuntimeController(store=store, codex_bin="codex")
+    closed = []
+    adapter = SimpleNamespace(healthcheck=lambda: True, close_session=lambda: closed.append(True),
+                              upstream_thread_id="thread-fixture")
+    session = store.create_session(goal_id="fixture", agent_id="codex", adapter_kind="codex_app_server",
+                                   upstream_thread_id="thread-fixture", upstream_mode="chat", channel_id="goal.fixture")
+    sid = session["session_id"]
+    controller.adapters[sid] = adapter
+    turn, _ = controller.submit_turn(session_id=sid, client_turn_id="wrong-adapter", message="/goal start --tokens 1000 Analyze",
+                                     work_dir=tmp_path, objective="Research")
+    result = controller.wait_for_turn(session_id=sid, turn_id=turn["turn_id"], timeout_sec=5)
+    assert result["error_code"] == "native_goal_adapter_mismatch", result.get("error")
+    controller.adapters.clear()
+    store.update_session(sid, upstream_mode="chat_native_goal")
+    monkeypatch.setattr(controller, "_start_adapter", lambda **kw: adapter)
+    with pytest.raises(CodexChatAgentError, match="could not be restored") as caught:
+        controller.resume_session(session_id=sid, work_dir=tmp_path, objective="Research")
+    assert caught.value.__cause__.error_code == "native_goal_adapter_mismatch"
+    assert closed == [True]

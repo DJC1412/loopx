@@ -91,6 +91,8 @@ class CodexGoalDriver:
         self.session = session
         self.stopped = threading.Event()
         self.mutation_lock = threading.RLock()
+        self.turn_start_handler: Callable[[str], None] | None = None
+        self.resume_context: str | None = None
 
     def read(self) -> dict[str, Any] | None:
         raw = self.session._request(
@@ -141,7 +143,7 @@ class CodexGoalDriver:
             else {"status": "absent"}
         )
 
-    def _response(self, goal: dict[str, Any] | None, text: str = "") -> dict[str, Any]:
+    def _response(self, goal: dict[str, Any] | None, text: str = "", *, messages: list[str] | None = None) -> dict[str, Any]:
         facts = self.compact(goal)
         status = facts["status"]
         note = f"Codex Goal: {status}."
@@ -149,6 +151,8 @@ class CodexGoalDriver:
             note += f" Tokens: {facts['tokensUsed']} / {facts['tokenBudget']}."
         note += " This is host execution status; LoopX work acceptance is unchanged."
         response = parse_agent_response(text, protected_paths=[self.session.work_dir])
+        if messages is not None:
+            response["message"] = "\n\n---\n\n".join(messages)
         # Autonomous execution has no fresh action-confirmation context. It
         # cannot manufacture a canonical acceptance or a handoff receipt.
         return {
@@ -167,7 +171,8 @@ class CodexGoalDriver:
         }
 
     def run(
-        self, command: NativeGoalCommand, emit: Callable[[str, dict[str, Any]], None]
+        self, command: NativeGoalCommand, emit: Callable[[str, dict[str, Any]], None],
+        *, execution_context: str | None = None,
     ) -> dict[str, Any]:
         if command.operation == "help":
             return parse_agent_response(USAGE, protected_paths=[self.session.work_dir])
@@ -194,7 +199,10 @@ class CodexGoalDriver:
                     "Mark only the native Codex Goal complete once this objective is satisfied.\n\n"
                     + str(command.objective)
                 )
+                if execution_context:
+                    objective = execution_context + "\n\nCurrent Goal objective:\n" + str(command.objective)
             else:
+                self.resume_context = execution_context
                 if not current or current["status"] in {
                     NativeGoalStatus.ACTIVE,
                     NativeGoalStatus.COMPLETE,
@@ -242,6 +250,7 @@ class CodexGoalDriver:
     def _observe(self, emit: Callable[[str, dict[str, Any]], None]) -> dict[str, Any]:
         deadline = time.monotonic() + self.session.hard_timeout_sec
         parts: list[str] = []
+        completed_messages: list[str] = []
         display = VisibleResponseStreamFilter(protected_paths=[self.session.work_dir])
         current_turn = ""
         delta_items: set[str] = set()
@@ -257,14 +266,16 @@ class CodexGoalDriver:
             if self.stopped.is_set() or (
                 goal["status"] != NativeGoalStatus.ACTIVE
                 and (
-                    goal["status"] != NativeGoalStatus.COMPLETE
+                    goal["status"] not in {NativeGoalStatus.COMPLETE, NativeGoalStatus.BLOCKED}
                     or (not current_turn and self.session._pending_events.empty())
                 )
             ):
                 tail = display.finish()
                 if tail:
                     emit("answer.delta", {"text": tail})
-                return self._response(goal, "".join(parts))
+                if parts:
+                    completed_messages.append(parse_agent_response("".join(parts), protected_paths=[self.session.work_dir])["message"])
+                return self._response(goal, messages=completed_messages)
             if time.monotonic() >= deadline:
                 raise self.session._timeout_error(
                     "hard_timeout",
@@ -286,6 +297,11 @@ class CodexGoalDriver:
                 current_turn = self.session.current_turn_id = turn_id
                 delta_items.clear()
                 emit("turn.started", {"upstream_turn_id": turn_id})
+                if self.resume_context:
+                    context, self.resume_context = self.resume_context, None
+                    self.session.steer(context, expected_turn_id=turn_id)
+                if self.turn_start_handler:
+                    self.turn_start_handler(turn_id)
             if turn_id and turn_id != current_turn:
                 continue
             if method == "item/agentMessage/delta":
@@ -312,6 +328,13 @@ class CodexGoalDriver:
                     raise _terminal_turn_error(
                         turn.get("error"), "Native Goal turn failed."
                     )
+                if parts:
+                    completed_messages.append(parse_agent_response("".join(parts), protected_paths=[self.session.work_dir])["message"])
+                    parts.clear()
+                tail = display.finish()
+                if tail:
+                    emit("answer.delta", {"text": tail})
+                display = VisibleResponseStreamFilter(protected_paths=[self.session.work_dir])
                 current_turn = self.session.current_turn_id = ""
                 goal = self.read()
             elif method == "error" and not params.get("willRetry"):

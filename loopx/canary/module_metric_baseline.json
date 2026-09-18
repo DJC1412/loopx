@@ -43,7 +43,7 @@
     "loopx/chat_server.py": {
       "any_count": 25,
       "dict_any_count": 0,
-      "lines": 1514
+      "lines": 1518
     },
     "loopx/codex_cli_probe.py": {
       "any_count": 37,

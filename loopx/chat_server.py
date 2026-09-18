@@ -37,7 +37,7 @@ from .chat_manager import (
 from .chat_session_open import open_chat_session
 from .chat_ssh_source_api import SshSourceRequestMixin
 from .chat_store import ChatSessionStore
-from .capabilities.manager_runtime import manager_runtime_capability_projection
+from .chat_loopx_mode import handle_loopx_request
 from .capabilities.manager_context.roundtrip import project_chat_session_snapshot
 from .control_plane.goals.active_state_metadata import active_state_section_text
 from .control_plane.status.ssh_host_catalog import (
@@ -1313,6 +1313,8 @@ class ChatRequestHandler(
         if len(action_parts) == 3 and action_parts[:2] == ["api", "actions"]:
             return self._action_snapshot(action_parts[2])
         session_parts = path.strip("/").split("/")
+        if len(session_parts) == 5 and session_parts[:3] == ["api", "chat", "sessions"] and session_parts[4] == "loopx":
+            return handle_loopx_request(self, session_parts[3])
         if len(session_parts) == 4 and session_parts[:3] == ["api", "chat", "sessions"]:
             return self._session_snapshot(session_parts[3])
         if len(session_parts) == 7 and session_parts[:3] == ["api", "chat", "sessions"] and session_parts[4] == "turns" and session_parts[6] == "events":
@@ -1347,6 +1349,8 @@ class ChatRequestHandler(
         if path in post_dispatch:
             return post_dispatch[path]()
         session_action_parts = path.strip("/").split("/")
+        if len(session_action_parts) == 5 and session_action_parts[:3] == ["api", "chat", "sessions"] and session_action_parts[4] == "loopx":
+            return handle_loopx_request(self, session_action_parts[3], apply=True)
         if len(session_action_parts) == 5 and session_action_parts[:3] == ["api", "chat", "sessions"] and session_action_parts[4] == "resume":
             return self._resume_session(session_action_parts[3])
         action_parts = path.strip("/").split("/")
