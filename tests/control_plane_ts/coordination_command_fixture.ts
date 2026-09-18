@@ -1,3 +1,4 @@
+import {executeCoordinationFollowupCapture} from "../../loopx/control_plane/coordination/todo_followup_capture.ts";
 import {executeCoordinationTodoArchiveCompleted} from "../../loopx/control_plane/coordination/todo_archive.ts";
 /** Shared real command fixture over the complete production-scale head. */
 import assert from "node:assert/strict";
@@ -13,7 +14,7 @@ import {productionScaleCoordinationFixture, PRODUCTION_SCALE_VALIDATION_DECLARAT
 import type {AuthoritySourceCheck} from "../../loopx/control_plane/coordination/authority_source.ts";
 
 
-export type Command = "create" | "claim" | "update" | "complete" | "supersede" | "archive" | "monitor";
+export type Command = "create" | "claim" | "update" | "complete" | "supersede" | "archive" | "monitor" | "capture";
 
 export async function coordinationCommandFixture(store: AuthorityStore, command: Command) {
   const goal_id = "goal-a";
@@ -39,6 +40,9 @@ export async function coordinationCommandFixture(store: AuthorityStore, command:
   } = {}): Promise<JsonObject> => {
     const request = {...common, operation_id: options.identity ?? operation_id, dry_run: options.dryRun ?? false};
     const sourceCheck = options.authoritySourcesCurrent;
+    if (command === "capture") return executeCoordinationFollowupCapture(target, {...request,
+      intent: {followups: ["Recover first captured task", "Recover second captured task"],
+        evidence: "validation://capture", metadata: {}}}, sourceCheck);
     if (command === "create") return executeCoordinationTodoCreate(target, {...request,
       actor_agent_id: "agent-a", todo: {schema_version: TODO_DOMAIN_ITEM_SCHEMA, todo_id: "todo_recovery_created",
         role: "agent", status: "open", done: false, archive_state: "active", text: "Recover the accepted create"}}, sourceCheck);

@@ -9,7 +9,7 @@ import {registryAuthoritySourceCheck} from "../../loopx/control_plane/coordinati
 import type {AuthorityStoreConformanceFactory} from "./authority_store_conformance.ts";
 import {coordinationCommandFixture, type Command} from "./coordination_command_fixture.ts";
 
-const commands: readonly Command[] = ["create", "claim", "update", "complete", "supersede", "monitor"];
+const commands: readonly Command[] = ["create", "claim", "update", "complete", "supersede", "monitor", "capture"];
 
 async function sourceFixture(t: test.TestContext) {
   const root = await mkdtemp(join(tmpdir(), "loopx-source-"));

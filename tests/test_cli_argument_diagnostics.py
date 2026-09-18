@@ -1047,7 +1047,7 @@ def test_todo_suggest_validation_accepts_suggestion_scope_options() -> None:
         (
             ["--todo-id", "todo_example", "--note", "not accepted"],
             "todo capture-followups only accepts --goal-id, --follow-up, optional "
-            "--text shorthand, --evidence, routing metadata, --project, --state-file, "
+            "--text shorthand, --evidence, routing metadata, --capture-operation-id, --project, --state-file, "
             "and --dry-run; unsupported: --todo-id, --note",
         ),
     ],

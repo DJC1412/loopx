@@ -1,3 +1,4 @@
+import {registerFollowupCaptureConformance} from "./followup_capture_conformance.ts";
 import {registerUserCompletionUpdateConformance} from "./user_completion_update_conformance.ts";
 import {registerLeaseAcquisitionConformance} from "./lease_acquisition_conformance.ts";
 import {registerClaimTransferConformance} from "./claim_transfer_conformance.ts";
@@ -215,6 +216,7 @@ export function registerAuthorityStoreConformance(
   providerName: string,
   factory: AuthorityStoreConformanceFactory,
 ): void {
+  registerFollowupCaptureConformance(providerName, factory);
   registerLeaseLifecycleConformance(providerName, factory);
   registerClaimTransferConformance(providerName, factory);
   registerLeaseAcquisitionConformance(providerName, factory);

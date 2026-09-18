@@ -7,7 +7,7 @@ import {canonicalAuthoritySha256} from "../../loopx/control_plane/coordination/a
 import type {AuthorityStoreConformanceFactory} from "./authority_store_conformance.ts";
 import {coordinationCommandFixture, type Command} from "./coordination_command_fixture.ts";
 
-const commands: readonly Command[] = ["create", "claim", "update", "complete", "supersede", "archive", "monitor"];
+const commands: readonly Command[] = ["create", "claim", "update", "complete", "supersede", "archive", "monitor", "capture"];
 type Fault = "none" | "lost_response" | "unreadable_receipt" | "ambiguous_unreadable" | "thrown_response";
 const faults: readonly Fault[] = ["none", "lost_response", "unreadable_receipt", "ambiguous_unreadable", "thrown_response"];
 

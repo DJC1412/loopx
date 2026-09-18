@@ -43,7 +43,7 @@ def fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 
 @pytest.mark.parametrize("writer", ["handoff", "followups"])
-def test_omitted_writers_refuse_a_fence_before_primary(
+def test_writers_refuse_invalid_authority_before_primary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, writer: str,
 ) -> None:
     registry, state, root = fixture(tmp_path)
@@ -57,7 +57,9 @@ def test_omitted_writers_refuse_a_fence_before_primary(
         },
     )
     before = state.read_bytes()
-    with pytest.raises(LegacyCoordinationWriterFenced):
+    from loopx.control_plane.coordination.local_authority import LocalCoordinationAuthorityUnavailable
+    expected = LegacyCoordinationWriterFenced if writer == "handoff" else LocalCoordinationAuthorityUnavailable
+    with pytest.raises(expected):
         if writer == "handoff":
             set_goal_handoff_mode(registry_path=registry, goal_id=GOAL, mode="soft_claim")
         else:
@@ -638,15 +640,13 @@ def test_active_capture_prepare_failure_holds_primary_before_any_transition(tmp_
     assert list(directory.glob("*.committed.json")) == []
 
 
-def test_public_preview_does_not_require_primary_write_permission(tmp_path: Path) -> None:
+def test_legacy_preview_does_not_require_primary_write_permission(tmp_path: Path) -> None:
     from loopx.control_plane.coordination.shadow_management import shadow_management_state_path
     registry, state, root = fixture(tmp_path)
     before = state.read_bytes()
     management = shadow_management_state_path(root, GOAL)
     management.parent.mkdir(parents=True)
     management.write_text("{}")
-    fence = legacy_coordination_writer_fence_path(runtime_root=root, goal_id=GOAL)
-    fence.write_text("{invalid")
     preview = cli(registry, "todo", "capture-followups", "--goal-id", GOAL,
         "--follow-up", "Preview remains read-only.", "--evidence", "preview fixture", "--dry-run")
     assert preview["dry_run"] is True
