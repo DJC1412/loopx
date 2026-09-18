@@ -231,11 +231,13 @@ The local steward retains cross-Goal intake and owner attention. Conversation
 and peer coordinators reuse scoped delegation, independent acceptance and return.
 
 The [explicit Goal Chat continuation](../../reference/goal-chat-continuation.md)
-slice adds a Codex native Goal driver to the existing read-only conversation:
-start/status/resume, multi-turn observation, stop and same-thread recovery.
-Native completion is a host observation, not canonical acceptance. Automatic
-heterogeneous-team continuation and other provider drivers remain unqualified;
-this slice does not close the multi-Agent acceptance rows below.
+slice connects the composer’s explicit LoopX mode to Codex native continuation,
+host-bound shared delegation, queue/inbox/steer and pause/recovery. First enable
+upgrades an idle executor’s tools while preserving local history; unfinished
+native Goals cannot be replaced. Member Turns retain TS acceptance authority.
+Native completion does not settle the canonical Goal or report Todo. Other lead
+drivers, Lark parity, unattended service and the broader multi-Agent acceptance
+rows below remain separate qualification requirements.
 
 This proposed extension refines the managed-team delivery contract; it does not
 add CLI flags, promote a host, or change existing session/profile defaults.

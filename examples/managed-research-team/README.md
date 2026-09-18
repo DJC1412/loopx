@@ -59,6 +59,42 @@ uv run --no-sync --extra test python -m loopx.cli \
   --format json goal-acceptance verify --goal-id synthetic-managed-research --execute
 ```
 
+## Goal Chat coordinator
+
+To use the local Goal conversation as the lead, prepare a new disposable team
+without launching the DSH lead. Use the same provider setup above:
+
+```bash
+uv run --no-sync --extra test python examples/managed-research-team/research_team.py \
+  prepare-chat "$DEMO_ROOT" --model "$ARK_MODEL_ID" --environment-id "$ARK_ENVIRONMENT_ID"
+
+export LOOPX_RESEARCH_DEMO_ROOT="$DEMO_ROOT"
+uv run --no-sync --extra test python -m loopx.cli \
+  --registry "$DEMO_ROOT/registry.json" --runtime-root "$DEMO_ROOT/runtime" \
+  chat --port 5310
+```
+
+Open `http://127.0.0.1:5310/chat/`, select **Synthetic managed research → Chat**,
+then **Enable LoopX → Settings**. Select `lead`, the prepared
+`.loopx/config/delegations.json`, and an explicit coordinator total token
+allowance. Save and enable. The Codex lead decides delegation order; no script
+advances business phases. Pause while a member works, refresh the page, then
+continue to observe that original member's accepted result. Queue a correction
+for the next native turn or explicitly select inbox/steer.
+
+This route returns the report in the conversation; the four member tasks have
+independent canonical acceptance. It does **not** write `lead/report.json` or
+complete `todo_lead-report`. The `validate-report` command above applies to the
+DSH/Ark lead route, which has an explicitly bound report-writing tool. Both
+routes keep the overall Goal active. Read the member Todos with the canonical
+command above; do not infer report acceptance from a native completion label.
+
+中文：用 `prepare-chat` 准备隔离团队，再启动上述本地 Chat。进入该 Goal 的
+对话，原地选择 `lead`、已生成的执行配置和协调员额度，开启后让模型组织协作。
+可在成员执行时暂停、刷新、恢复，检查成员结果仍回到原对话。此入口把综合报告
+返回对话；四个成员任务分别验收，报告 Todo 和整体 Goal 保留给所有者处理。
+详见 [Goal 对话运行模式](../../docs/reference/goal-chat-continuation.md)。
+
 ## Collaboration path
 
 ### Keep an existing Codex or other local lead

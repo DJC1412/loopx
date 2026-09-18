@@ -149,6 +149,20 @@ def accepted_entry(worker: str, revision: str, output: dict) -> dict:
             "evidence": output, "artifact_sha256": sha256(encoded(output)).hexdigest()}
 
 
+def prepare_execution(root: Path, model: str, environment_id: str, dsh_model: str,
+                      topology: str = "local-led") -> dict:
+    """Prepare a fresh operator fixture without starting a replacement lead."""
+    prepare(root, topology=topology)
+    write(root / "settings.json", {"dsh_model": dsh_model, "ark_model": model, "environment_id": environment_id})
+    config = configure_delegations(root)
+    return {"goal_id": GOAL, "agent_id": "lead", "registry": str(root / "registry.json"),
+            "runtime_root": str(root / "runtime"), "execution_config": str(config),
+            "workspace": str(root / "lead"), "execution_started": False,
+            "next_action": "Use delegation list/start/read/wait from the existing Agent session. "
+                           "Supply LOOPX_RESEARCH_DEMO_ROOT and the configured credentials when starting work. "
+                           "Independent task acceptance remains bound; prepare does not complete any task."}
+
+
 def launch(root: Path, model: str, environment_id: str, dsh_model: str, topology: str = "local-led") -> dict:
     if importlib.util.find_spec("deepseek_harness") is None:
         raise ValueError("install_loopx_deepseek_harness_extra_in_this_interpreter")
@@ -169,23 +183,9 @@ def launch(root: Path, model: str, environment_id: str, dsh_model: str, topology
     return summary
 
 
-def prepare_execution(root: Path, model: str, environment_id: str, dsh_model: str,
-                      topology: str = "local-led") -> dict:
-    """Prepare a fresh operator fixture without starting a replacement lead."""
-    prepare(root, topology=topology)
-    write(root / "settings.json", {"dsh_model": dsh_model, "ark_model": model, "environment_id": environment_id})
-    config = configure_delegations(root)
-    return {"goal_id": GOAL, "agent_id": "lead", "registry": str(root / "registry.json"),
-            "runtime_root": str(root / "runtime"), "execution_config": str(config),
-            "workspace": str(root / "lead"), "execution_started": False,
-            "next_action": "Use delegation list/start/read/wait from the existing Agent session. "
-                           "Supply LOOPX_RESEARCH_DEMO_ROOT and the configured credentials when starting work. "
-                           "Independent task acceptance remains bound; prepare does not complete any task."}
-
-
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("command", choices=["prepare", "run", "validate-worker", "validate-report"])
+    p.add_argument("command", choices=["prepare", "prepare-chat", "run", "validate-worker", "validate-report"])
     p.add_argument("root", type=Path)
     p.add_argument("--revision", choices=REVISIONS)
     p.add_argument("--model", default=os.environ.get("ARK_MODEL_ID"))
@@ -193,12 +193,26 @@ def main() -> None:
     p.add_argument("--dsh-model", default="deepseek-v4-flash")
     p.add_argument("--topology", choices=["local-led", "cloud-led"], default="local-led")
     args = p.parse_args()
-    if args.command in {"prepare", "run"}:
+    if args.command in {"prepare", "prepare-chat", "run"}:
         if not args.model or not args.environment_id:
             p.error("explicit model and existing environment required")
         if args.command == "prepare":
             print(json.dumps(prepare_execution(args.root.resolve(), args.model, args.environment_id,
                                                args.dsh_model, args.topology)))
+            return
+        if args.command == "prepare-chat":
+            root = args.root.resolve()
+            prepare_execution(root, args.model, args.environment_id, args.dsh_model, args.topology)
+            target = root / "project" / ".loopx" / "config" / "delegations.json"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(root / "delegation-config.json", target)
+            with (root / "project" / "ACTIVE_GOAL_STATE.md").open("a") as stream:
+                stream.write("\n## Objective\n\nOrganize the authorized members with loopx_collaboration. "
+                             "Local-analyst must finish before cloud-reviewer adopts its exact evidence; "
+                             "cloud-analyst delegates local-reviewer itself. Wait for independently accepted results. "
+                             "Return the corrected cash-flow comparison, source and period caveats, and exact dependency "
+                             "hashes in this conversation. The canonical report task and whole Goal remain for owner review.\n")
+            print("Prepared Goal Chat team. Select lead and .loopx/config/delegations.json in LoopX mode settings.")
             return
         result = launch(args.root.resolve(), args.model, args.environment_id, args.dsh_model, args.topology)
         print(json.dumps(result))

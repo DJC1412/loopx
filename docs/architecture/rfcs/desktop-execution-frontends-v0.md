@@ -162,9 +162,11 @@ The baseline project coordinator surface is the existing **Goal → Chat**. A
 registered peer may carry that responsibility instead; neither choice creates
 a separate coordinator conversation or changes the steward's cross-Goal role.
 [Explicit Codex continuation](../../reference/goal-chat-continuation.md) reuses
-the message box, streamed run, existing interrupt control and original history.
-This read-only driver slice leaves scoped team execution/acceptance integration
-and Lark/other-provider parity as separate qualification requirements.
+the composer with explicit enable/pause/continue, streamed work and original local
+history. It joins the existing delegation service and independently accepted
+member results; queue/inbox/steer retain distinct receipts. First-use settings
+select an existing execution binding without granting authority by registration.
+Lark/other-lead parity and unattended operation remain separate requirements.
 
 In live-steering and queued-session modes, Web and Lark messages enter one
 serialized ingress stream for the selected Agent session. Each message records

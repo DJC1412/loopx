@@ -1,101 +1,117 @@
-# Continue work in the existing Goal Chat
+# Continue work in Goal Chat
 
-The existing frontend **Goal → Chat** is the conversational coordinator entry.
-A coordinator is a responsibility: the conversation can carry it, or the owner
-can assign peer task coordination to a registered Agent. The local steward
-handles cross-Goal intake and owner attention; the project conversation keeps
-its Goal context, work discussion and returned results. These roles reuse the
-same scoped collaboration and canonical acceptance boundaries. A role does not
-select an executor, create a worker, transfer a lease or start a continuous loop.
+The existing **Goal → Chat** can be the project coordinator. The local steward
+handles cross-Goal intake and owner attention; a project conversation or a
+registered peer can coordinate work within one Goal. Both reuse the existing
+[delegation service](local-delegation.md), independently governed member Turns
+and TS task acceptance. A coordinator role alone grants no execution authority.
 
-## Explicit Codex continuation
+## Enable LoopX mode
 
-For a **managed Codex Goal Chat**, enter the following in the existing message
-box. This opt-in uses the native Codex Goal in the conversation's existing
-upstream thread; ordinary messages retain the normal single-turn behavior.
-The host must support the experimental app-server `thread/goal/*` APIs.
+On a local managed Codex Goal conversation, choose **Enable LoopX** beside the
+composer. First use opens **Settings** in place. Select the registered sender,
+its existing delegation configuration under the project's `.loopx/config/`, and
+a positive total coordinator token allowance. Save, then enable. Subsequent
+activations reuse these settings. The member roster comes from the authorized
+bindings; selecting a registered Agent alone cannot launch members.
+
+The coordinator chooses whom to ask, the order of work and how to respond to
+rejection. Its host-bound `loopx_collaboration` tool exposes bindings, start,
+read, wait, resume and inbox messages. Models cannot select a different sender,
+executable, workspace or acceptance rule. The same delegation service supports
+an authorized member coordinating further members. Results returned as
+`accepted` require current canonical task completion and unchanged artifacts.
+
+The composer shows native state, accumulated coordinator usage and last member
+observations. **Pause** stops the coordinator, while already delegated members
+continue under their independent deadlines and acceptance rules. **Continue**
+resumes the same native Goal and its accumulated usage. **Exit mode** returns to
+ordinary conversation; it does not cancel children or settle the canonical Goal.
+Ordinary messages after pausing remain ordinary messages.
+
+During execution the message selector offers:
+
+| Mode | Delivery contract |
+| --- | --- |
+| Next turn (`queue`, default) | Persist now; inject at a subsequent native turn start. It does not interrupt the current turn or promise another turn will occur. |
+| Inbox | Persist for the coordinator to read explicitly with `messages`; delivery is not semantic adoption. |
+| Steer now | Ask the provider to steer the exact current turn. Rejection remains a failure; it is never downgraded to queue. |
+
+Pending input remains visible after pause or native completion. A lost queue
+acknowledgement is `uncertain`, is not automatically replayed, and needs explicit
+owner reconciliation. Input is bounded to 12,000 characters and 20 pending
+messages; images use the ordinary conversation after pausing.
+
+## Execution and recovery boundaries
+
+- This lead driver requires Codex's experimental app-server `thread/goal/*`
+  APIs. It retains the Goal Chat's read-only sandbox and model configuration;
+  member execution uses only the configured host bindings. It does not inherit
+  the steward's trusted-owner permissions or confer arbitrary shell writes.
+- Codex cannot add dynamic tools to a resumed thread. On first explicit enable,
+  an idle executor is replaced with a tool-equipped thread, retaining the local
+  conversation identity/history and resolved model/effort. An unfinished native
+  Goal is never replaced; finish it or explicitly start another conversation.
+  Subsequent pauses/recovery retain the exact upgraded upstream thread.
+- Duplicate activation ids return the original run; changed requests using the
+  same id fail. A second active conversation cannot use the same configured
+  sender concurrently. This fence does not acquire or transfer a peer's Todo lease.
+- An unfinished native Goal pins its sender and execution file digest. A changed
+  or revoked binding fails closed and must be reconciled; increasing the total
+  token allowance does not change member authority.
+- Native `complete`, `blocked`, `paused`, `budgetLimited` and `usageLimited`
+  describe the coordinator host. They do not complete a canonical Goal or the
+  coordinator's report Todo. The returned conversation report and accepted
+  member tasks remain distinguishable. Token allowance includes prior usage;
+  in-flight requests can overshoot it and member usage is accounted separately.
+- Browser refresh reconnects to the existing local run. After service loss,
+  reconnect restores and pauses the original native thread before resuming.
+  The Chat hard timeout remains in force; this is not an unattended daemon.
+- To roll back, pause/close the Chat service before installing an older build.
+  Disabling mode or deleting a binding does not cancel already admitted children;
+  use their own execution/recovery controls and retain their evidence.
+
+The ordinary native command path also remains available without delegation:
 
 ```text
-/goal start --tokens 100000 Inspect the project evidence, compare the revisions, and report the verified conclusions here.
+/goal start --tokens 100000 Inspect this project's evidence and report verified conclusions here.
 /goal status
 /goal resume --tokens 200000
 ```
 
-- `start` requires a nonempty objective of at most 3000 characters. An unfinished
-  native Goal must be resumed; `start` cannot silently replace it.
-- `resume` keeps the native objective and accumulated usage. The number is the
-  **total native token allowance**, including input context and previous usage,
-  and must exceed usage already observed. It is not an additional allowance or
-  a strict cost ceiling: an in-flight model request can overshoot it.
-- `status` reads the current native state without a model turn. `/goal` shows
-  command help. State notifications trigger authoritative readback, so old
-  notifications on recovery cannot report a stale stop as the current state.
-- To pause, open the current run → **Details and actions → More run actions →
-  Interrupt this run**. This interrupts the current native turn and pauses the
-  native Goal. Resume in the same conversation. Sending an ordinary follow-up
-  after pausing does not activate the native Goal again.
-- Each activation stays within the Chat service's configured hard timeout.
-  A timeout pauses work; explicit resume continues the same thread. Browser
-  reconnect observes the existing local turn. Service recovery pauses the
-  native Goal before accepting more work; it never silently starts a replacement
-  thread. A coordination-tool upgrade also preserves native sessions and their
-  recorded tool version; start a new Session explicitly to select upgraded tools.
-  Stop or close the Chat service before rolling back to an older build.
-
-The native driver supplies the continuation; there is no business-phase script
-and no second LoopX scheduler. Multiple native turns remain one observed Chat
-run, with output in the original conversation. A native completion that arrives
-before its final answer does not truncate that answer. Budget or usage limits
-interrupt in-flight work as soon as the host reports them.
-
-## Scope and acceptance
-
-Continuation retains the Goal Chat's **read-only sandbox**, existing Codex home,
-model/provider and approval policy. It does not use the steward's trusted-owner
-profile. Attached hosts, other executors, the steward channel and execution-task
-channels reject this command. Use an ordinary message to provide image context
-before starting continuation.
-
-`complete`, `blocked`, `paused`, `budgetLimited` and `usageLimited` are native
-host observations. They do not complete a LoopX Goal/Todo, satisfy an acceptance
-validator, deliver a peer result or grant mutation authority. The native answer
-cannot supply executable proposals or handoff receipts. Registered workers keep
-their independent profiles, work commitments and execution/acceptance bindings.
-
-This stage qualifies read-only conversation continuity. Scoped conversational
-handoff is the separate [#4696](https://github.com/huangruiteng/loopx/pull/4696)
-companion, now merged. Automatically dispatching and accepting a heterogeneous team across
-native continuation cycles remains the next integration boundary; this feature
-does not claim that qualification, Ark/DSH driver parity or unattended daemon
-operation. The [session RFC](../architecture/rfcs/agent-session-execution-modes-v0.md)
-and [overall roadmap](../architecture/rfcs/loopx-overall-roadmap-v0.md) retain those
-acceptance requirements.
+`start` takes at most 3000 objective characters; `status` does not run the model.
+These commands alone do not enable the collaboration tool. Lark, attached
+sessions, and other lead drivers do not expose this button or gain equivalent
+behavior. Their qualification remains with the
+[session RFC](../architecture/rfcs/agent-session-execution-modes-v0.md).
+For a disposable mixed-team setup, use the
+[synthetic research example](../../examples/managed-research-team/README.md#goal-chat-coordinator).
 
 ## 中文使用说明
 
-基线入口就是现有的 **Goal → 对话**。对话可以承担项目协调职责，也可以把
-peer 任务协调职责明确分配给已注册 Agent；跨项目管家继续负责全局接待与需要
-所有者处理的事项。职责、执行身份、运行驱动和验收权限分别由原有边界管理。
+入口仍是 **Goal → 对话**，在输入框旁点 **开启 LoopX 模式**。首次原地填写
+已注册的协调身份、项目 `.loopx/config/` 下的现有成员执行配置、协调员总 token
+额度，保存后开启；之后复用设置。注册身份本身不授予启动成员的权限。
 
-在使用 managed Codex 的 Goal 对话中直接输入：
+模型自主决定分工、先后顺序和拒绝后的处理；宿主固定身份与执行范围，成员
+沿用原有 Turn、TS 验收和 canonical Todo 完成链路。有授权的成员也可继续委派。
+工具 ACK、模型口头完成、原生 Goal 完成都不能替代成员独立验收。
 
-```text
-/goal start --tokens 100000 阅读本项目资料，比较修订前后的变化，检查计算并把报告返回当前对话。
-/goal status
-/goal resume --tokens 200000
-```
+**暂停**只停协调员，已派发成员继续执行；**恢复推进**沿用原生 Goal 和累计
+用量；**退出模式**恢复普通对话。暂停后发普通问题不会再次启用持续推进。
+运行中默认消息进入 **下一轮处理**；**放入收件箱**等待模型主动读取；
+**立即纠偏**交给当前原生回合，失败不会偷偷变成排队。队列不会强制开启下一轮；
+暂停或完成后仍会显示待处理消息。不确定是否已送达的消息不自动重放，需所有者
+核对；每条最多 12,000 字符，最多 20 条待处理消息。图片在暂停后用普通对话发送。
 
-`start` 的目标最多 3000 字符；已有未完成的原生 Goal 需要用 `resume` 继续。
-数字是包含输入上下文与历史消耗的原生总 token 额度，续跑时不会清零；已发出的
-模型请求可能超额。`status` 不调用模型，`/goal` 显示帮助。
+首次开启需要为闲置执行器增加工具，因此保留前端会话和历史、模型及推理配置，
+升级底层线程；已有未结束的原生 Goal 时拒绝替换。以后恢复都沿用该线程。
+服务重启先恢复并暂停原线程；浏览器刷新不会另起运行。运行仍有硬超时，尚非
+无人值守 daemon。配置文件在未结束的 Goal 中保持摘要绑定，改变后需先协调处理。
 
-暂停沿用当前运行详情中的 **详情与操作 → 更多运行操作 → 中断本次运行**。
-随后在原对话 `resume`，或发送普通问题。普通消息不会再次启用持续推进。
-每次激活仍受 Chat 服务的硬超时约束；浏览器重连继续观察当前运行，服务恢复
-先暂停原生 Goal，再接受新工作。协调工具升级也保留原生会话及其记录的工具版本；
-需要新版工具时显式创建新 Session。回滚旧版本前先停止本次运行或关闭 Chat 服务。
-
-此功能保留 Goal 对话的只读沙箱和原有模型/provider，不继承管家的 trusted-owner
-权限。原生 Goal 完成、暂停、阻塞与限额状态均会明确显示；它们不是 LoopX 的
-任务验收结论。本阶段打通同一对话的持续分析与恢复，跨多个持续回合自动驱动
-混合 Agent 团队并收齐独立验收结果，仍需要与共享协作链路继续集成。
+协调员保留只读沙箱，成员权限来自各自执行绑定，不继承管家的扩大权限。
+成员通过验收与协调员报告、整个 Goal 验收分别显示；本模式不直接完成报告 Todo
+或整个 Goal。额度是含历史用量的总量，正在执行的请求可能超额，成员另行计量。
+回滚旧版本前先暂停或关闭 Chat 服务；退出或撤销绑定不自动取消已启动的成员。
+此按钮目前限本机 managed Codex Goal 对话，不宣称 Lark、挂接会话或其他主力
+驱动等价。可用下方示例准备一次隔离的本地 DSH＋云端 Ark 协作。

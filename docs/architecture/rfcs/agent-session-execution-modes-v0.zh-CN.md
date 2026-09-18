@@ -187,9 +187,10 @@ claim 与完成回执，以及"只有经过验证的回写才推进工作"这一
 coordinator 复用限定范围的委派、独立验收与结果返回。
 
 [Goal 对话显式续跑](../../reference/goal-chat-continuation.md)这一阶段把 Codex
-原生 Goal 驱动接入现有只读对话，覆盖启动/状态/继续、多回合观察、停止与同
-会话恢复。原生完成是宿主观察，不是 canonical 验收。混合团队自动续跑和其他
-provider 驱动仍未完成资格验证，本阶段不关闭下文的多 Agent 验收项。
+原生续跑接入输入框旁的 LoopX 模式，复用宿主绑定身份的委派、queue/inbox/steer
+与暂停恢复。首次开启仅升级闲置执行器的工具并保留本地历史，不替换未完成的
+原生 Goal。成员 Turn 仍由 TS 验收；原生完成不结算 canonical Goal 或报告 Todo。
+其他主力驱动、Lark 等价、无人值守服务和下文完整多 Agent 验收项仍分别资格化。
 
 本提案细化 managed 团队的交付契约，不新增 CLI 参数、不晋升宿主，也不改变现有
 会话/profile 默认。区分三组身份：已注册 Agent、其当前宿主会话与执行代际、每次工作
