@@ -114,6 +114,11 @@ CLI and Turn. It does not infer a protocol from ordinary metadata field names.
 Existing packets may omit the nested schema version; an explicitly supplied
 version must match. Historical read compaction remains unchanged.
 
+A path delta rides the existing `--agent-vision-json` vision write boundary. It
+is retained in the same agent-scoped run history and shared-runtime vision
+projection without adding more inline CLI flags or expanding the heartbeat
+prompt.
+
 ```json
 {
   "vision_patch": {"vision_summary": "Deliver the verified successor."},
