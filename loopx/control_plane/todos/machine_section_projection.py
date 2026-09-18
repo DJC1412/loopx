@@ -38,7 +38,7 @@ from .completion_validation_projection import (
     completion_validation_declaration_sha256,
     project_completion_validation_authority,
 )
-from .active_state_todo_parser import parse_active_state_todos
+from .active_state_todo_parser import parse_todo_source
 from .contract import (
     TODO_DECISION_SCOPE_SCHEMA_VERSION,
     TODO_METADATA_FIELDS,
@@ -49,7 +49,7 @@ from .contract import (
     require_todo_decision_scope,
     todo_marker_for_status,
 )
-from .todo_summary import canonical_todo_read_record, todo_priority_parts, normalize_todo_text
+from .todo_summary import canonical_todo_read_record, todo_priority_parts, normalize_todo_text, structured_todo_item
 
 
 TODO_SECTION_PROJECTION_SCHEMA_VERSION = "loopx_todo_section_projection_v0"
@@ -260,15 +260,13 @@ def _render_section(
 
 
 def _parsed_active_records(markdown: str) -> list[dict[str, Any]]:
-    fields = parse_active_state_todos(markdown, item_limit=None)
-    records: list[dict[str, Any]] = []
-    for role in TODO_SECTION_HEADINGS:
-        summary = fields.get(f"{role}_todos")
-        items = summary.get("items") if isinstance(summary, dict) else []
-        for item in sorted(items or [], key=_record_sort_key):
-            if isinstance(item, dict) and item.get("archive_state") == "active":
-                records.append(canonical_todo_read_record(item, reject_unknown=False))
-    return records
+    # Machine round-trip validation needs full text, not status display slices
+    # or live eligibility evaluation. Reuse the source and metadata codecs.
+    items, _, sections = parse_todo_source(markdown, text_limit=None)
+    return [canonical_todo_read_record(structured_todo_item(item, role=role,
+                source_section=sections[role], text_limit=None), reject_unknown=False)
+            for role in TODO_SECTION_HEADINGS
+            for item in sorted(items[role], key=_record_sort_key)]
 
 
 def _parsed_archive_records(markdown: str) -> list[dict[str, Any]]:
@@ -282,6 +280,7 @@ def _parsed_archive_records(markdown: str) -> list[dict[str, Any]]:
         bounds[0],
         bounds[1],
         source_section=COMPLETED_WORK_ARCHIVE_HEADING,
+        text_limit=None,
     ):
         if item.get("role") not in TODO_SECTION_HEADINGS:
             raise TodoSectionProjectionError(
@@ -323,6 +322,13 @@ def _projection_record(
         },
         reject_unknown=True,
     ))
+    # Native records need no redundant priority/title fields. Derive their
+    # display values here, while retaining explicit values so contradictions
+    # still fail parity instead of silently rewriting canonical metadata.
+    priority, title = todo_priority_parts(str(projected["text"]))
+    if priority:
+        projected.setdefault("priority", priority)
+        projected.setdefault("title", normalize_todo_text(title))
     if "decision_scope" in projected:
         # The Markdown codec spells out the optional scope schema version on
         # readback. Normalize that display representation, never the provider

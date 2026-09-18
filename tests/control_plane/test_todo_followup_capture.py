@@ -23,8 +23,18 @@ def test_capture_cli_preserves_continuation_policy(tmp_path):
     assert items["agent"][-1].get("continuation_policy") == "same_agent_non_delivery"
 
 
-def test_capture_uses_full_text_identity(tmp_path):
+@pytest.mark.parametrize("provider", [None, "file", "sqlite"])
+def test_capture_uses_full_text_identity(tmp_path, monkeypatch, provider):
     registry, state = fixture(tmp_path)
+    if provider is not None:
+        from canonical_authority_fixture import initialize_canonical_authority, isolate_sqlite_runtime
+        from loopx.control_plane.coordination.runtime_shadow import build_todo_runtime_shadow_projection
+        from loopx.todos import list_goal_todos
+        if provider == "sqlite":
+            isolate_sqlite_runtime(tmp_path, monkeypatch)
+        projection = build_todo_runtime_shadow_projection(goal_id=GOAL, handoff_mode="hard_lease",
+            todos=list_goal_todos(registry_path=registry, goal_id=GOAL)["todos"])
+        initialize_canonical_authority(tmp_path / "runtime", GOAL, projection, state_path=state, provider=provider)
     prefix = "[P1] " + "long text " * 60
     one, two = prefix + "first invariant", prefix + "second invariant"
     args = dict(registry_path=registry, goal_id=GOAL, followups=[one, two], evidence="validation://capture")

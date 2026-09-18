@@ -49,7 +49,10 @@ One TypeScript plan processes the whole request in order:
 
 The old 500-character **display** limit no longer defines capture identity.
 Distinct long texts remain distinct, and rereading the legacy source uses an
-explicit lossless decoder mode. Other display callers retain their limits.
+explicit lossless decoder mode. Machine projection also validates through lossless source/metadata codecs rather
+than status summaries; long records can be delivered instead of remaining pending.
+Missing native priority/title annotations are derived for display, while explicit
+contradictions still fail parity. Other display callers retain their limits.
 `--continuation-policy`, previously accepted but dropped by the CLI, now reaches
 both writers. Invalid metadata or a malformed tail rejects the entire request;
 invalid requirements are not silently removed. This applies even to a batch

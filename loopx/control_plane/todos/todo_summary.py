@@ -319,8 +319,9 @@ def structured_todo_item(
     role: str | None,
     source_section: str | None,
     archive_state: str = "active",
+    text_limit: int | None = 500,
 ) -> dict[str, Any]:
-    text = normalize_todo_text(str(item.get("text") or ""))
+    text = normalize_todo_text(str(item.get("text") or ""), limit=text_limit)
     priority, title = todo_priority_parts(text)
     index = item.get("index")
     explicit_status = normalize_todo_status(item.get("status"))

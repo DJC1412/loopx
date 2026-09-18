@@ -706,3 +706,20 @@ def test_real_promoted_provider_to_cli_projection(tmp_path: Path) -> None:
     assert code == 0 and replay["changed"] is False
     assert state.read_bytes() == published
     assert read_canonical_todos_if_promoted(runtime_root=runtime, goal_id="goal-a") == before
+
+
+@pytest.mark.parametrize("archive", [False, True])
+def test_projection_round_trip_keeps_full_native_text_and_derives_display_priority(archive):
+    text = "[P1] " + "Full authority text " * 40 + "distinct suffix"
+    record = {"schema_version": "todo_domain_record_v0", "todo_id": "todo_full_text", "role": "agent",
+              "status": "open", "done": False, "text": text,
+              "archive_state": "archive" if archive else "active", "task_class": "advancement_task"}
+    before = deepcopy(record)
+    projection = render_canonical_todo_sections(SOURCE, [record], provider_revision="rev-full-text")
+    assert text in projection.markdown
+    assert record == before  # Display derivation cannot add fields to authority.
+    replay = render_canonical_todo_sections(projection.markdown, [record], provider_revision="rev-full-text")
+    assert replay.changed is False
+    with pytest.raises(TodoSectionProjectionError, match="parity mismatch"):
+        render_canonical_todo_sections(SOURCE, [{**record, "priority": "P4", "title": "Conflicting metadata"}],
+                                       provider_revision="rev-conflicting-priority")
