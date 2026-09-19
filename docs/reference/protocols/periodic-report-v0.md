@@ -290,11 +290,14 @@ drift.
 `periodic_report_project_progress_projection_v0` is the built-in,
 domain-neutral source input. It groups typed project facts into progress,
 capability evolution, risks, next actions, and supporting evidence, with no
-more than eight primary audience items. Issue Fix has no special standing in
-either schema. It may register a peer source adapter under the same contract as
-release, research, operations, or another domain. OpenViking is likewise an
-optional archive/query provider behind a sink extension; it does not own
-trigger, selection, rendering, or delivery.
+more than eight primary audience items. The snapshot covers the whole Goal:
+every Agent's eligible facts are selectable, and the requesting `agent_id`
+ranks that Agent's own outcomes and next action ahead of a peer lane's and an
+unclaimed one's, so the audience-item cap cannot evict the reporter's own
+progress. Issue Fix has no special standing in either schema. It may register a
+peer source adapter under the same contract as release, research, operations, or
+another domain. OpenViking is likewise an optional archive/query provider behind
+a sink extension; it does not own trigger, selection, rendering, or delivery.
 
 `periodic_report_v0` is the LoopX control contract for one bounded report run.
 It binds a period window and a profile to typed source snapshots, one rendered
