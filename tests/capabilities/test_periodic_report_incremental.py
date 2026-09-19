@@ -967,7 +967,7 @@ def _outcome_refs(snapshot: dict[str, object]) -> list[str]:
     ]
 
 
-def test_snapshot_reports_peer_agent_outcomes_for_a_shared_goal(
+def test_snapshot_reports_peer_outcomes_and_keeps_unowned_rows_out(
     tmp_path: Path,
 ) -> None:
     """A Goal-level report must not silently drop another lane's progress."""
@@ -998,11 +998,7 @@ def test_snapshot_reports_peer_agent_outcomes_for_a_shared_goal(
     )
 
     assert snapshot is not None
-    assert _outcome_refs(snapshot) == [
-        "todo:todo_own",
-        "todo:todo_peer",
-        "todo:todo_unclaimed",
-    ]
+    assert _outcome_refs(snapshot) == ["todo:todo_own", "todo:todo_peer"]
 
 
 def test_snapshot_ranks_peer_outcomes_after_the_reporter_and_honors_the_stage_window(
@@ -1079,29 +1075,12 @@ def test_snapshot_outcome_cap_keeps_every_reporting_agent_outcome(
     assert refs[5:] == ["todo:todo_peer_3"]
 
 
-def test_snapshot_next_action_falls_back_to_peer_then_unowned_todo(
+def test_snapshot_next_action_prefers_the_peer_lane_over_an_unowned_row(
     tmp_path: Path,
 ) -> None:
-    peer_and_unowned = _agent_todo_state(
-        [
-            _todo(
-                "- [ ] Continue the unclaimed work.",
-                "todo_id=todo_unclaimed status=open task_class=advancement_task",
-            ),
-            _todo(
-                "- [ ] Continue the peer lane's work.",
-                "todo_id=todo_peer status=open task_class=advancement_task "
-                "claimed_by=peer-agent",
-            ),
-        ]
-    )
-    with_peer = build_project_progress_snapshot_from_state(
-        **_snapshot_call(tmp_path, peer_and_unowned)
-    )
-    assert with_peer is not None
-    assert _next_action_refs(with_peer) == ["todo:todo_peer"]
+    """A row no Agent claimed keeps frontier ownership, and reports nothing."""
 
-    unowned_only = build_project_progress_snapshot_from_state(
+    snapshot = build_project_progress_snapshot_from_state(
         **_snapshot_call(
             tmp_path,
             _agent_todo_state(
@@ -1110,10 +1089,16 @@ def test_snapshot_next_action_falls_back_to_peer_then_unowned_todo(
                         "- [ ] Continue the unclaimed work.",
                         "todo_id=todo_unclaimed status=open"
                         " task_class=advancement_task",
-                    )
+                    ),
+                    _todo(
+                        "- [ ] Continue the peer lane's work.",
+                        "todo_id=todo_peer status=open"
+                        " task_class=advancement_task claimed_by=peer-agent",
+                    ),
                 ]
             ),
         )
     )
-    assert unowned_only is not None
-    assert _next_action_refs(unowned_only) == ["todo:todo_unclaimed"]
+
+    assert snapshot is not None
+    assert _next_action_refs(snapshot) == ["todo:todo_peer"]
