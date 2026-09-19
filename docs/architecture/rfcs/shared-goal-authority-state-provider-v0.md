@@ -3125,3 +3125,21 @@ soak, release, merge and live promotion retain their respective authorization.
 | C. Canonical transaction capture | Qualify the implementation merged in #3870 | Transaction-bound outbox capture targets the one `coordination.runtime_shadow` lineage and retains complete versioned Todo/lease records. Finish sustained mixed-writer parity, explicit-clear/omission coverage, and event-only Todo recovery evidence. | Can run in parallel with P, but both C and the selected provider profile must finish before parity or promotion integration. |
 | I. Binding and qualification integration | After C and the selected profile's qualification | Bind one exact provider lineage, field manifest, source revision, digest, and cursor; qualify explicit v0 import, ordering/archival/consumer parity, and recovery/capacity without consulting legacy state for missing fields. | Long-goal local integration requires L and does not wait for P. PostgreSQL joins only when its own P holds pass. |
 | F. Promotion and cleanup | After I and explicit maintainer approval | Complete provider-first CLI routing, the lock-owning promotion orchestrator, compatibility projection outbox, post-promotion fenced export/rollback, then delete duplicate reference aggregates and flip the reviewed stage/hold declarations. | Each profile must pass C, I, and its own provider qualification; long-goal local promotion additionally requires L, and PostgreSQL requires P. |
+
+## Appendix D: Execution ledger
+
+Delivery records for this RFC are files under
+[`ledger/shared-goal-authority-state-provider-v0/`](ledger/shared-goal-authority-state-provider-v0/),
+one dated entry per change, named and paired per
+[the ledger convention](ledger/README.md). An entry states what the change
+measured, what it changed, and what it did not establish.
+
+New records go there instead of into the dated sections of Appendix C. Those
+sections stay as they are: append-only history that nobody edits, and rewriting
+them into files would produce a large mechanical diff that forces rework on the
+open branches it is meant to help, while fixing nothing. The reason is measured,
+not assumed — see
+[`2026-09-19-shared-goal-authority-entries-get-a-ledger.md`](ledger/shared-goal-authority-state-provider-v0/2026-09-19-shared-goal-authority-entries-get-a-ledger.md).
+
+`examples/docs-governance-smoke.py` checks the entry naming, the Chinese mirror
+beside each entry, and that this appendix exists for the directory it names.

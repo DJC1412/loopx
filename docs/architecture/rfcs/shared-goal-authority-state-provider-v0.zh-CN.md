@@ -2478,3 +2478,16 @@ adapter，也不依赖 PostgreSQL service 部署。
 | C. Canonical transaction capture | 资格化 #3870 已合入实现 | transaction-bound outbox 已指向唯一 `coordination.runtime_shadow` lineage，并保留完整带版本的 Todo/lease record；继续完成 sustained mixed-writer parity、explicit-clear/omission 与 event-only Todo recovery 证据。 | 可与 P 并行；但 C 与选定 provider profile 都完成后，才能进入 parity 或 promotion 集成。 |
 | I. Binding 与资格集成 | C 与选定 profile 的资格化完成后 | 绑定一个精确 provider lineage、field manifest、source revision、digest 与 cursor；资格化显式 v0 import、排序/归档/consumer parity 与 recovery/capacity；缺字段时不得查询 legacy state 补齐。 | 长程本地集成需要 L，不等待 P；PostgreSQL 仅在自己的 P hold 全通过后汇合。 |
 | F. Promotion 与清理 | I 完成且 maintainer 显式批准后 | 完成 provider-first CLI routing、持锁 promotion orchestrator、兼容投影 outbox、晋升后 fenced export/rollback；随后删除重复 reference aggregate，并翻转经评审的 stage/hold 声明。 | 每个 profile 必须通过 C、I 与自身 provider 资格化；长程本地晋升还需 L，PostgreSQL 还需 P。 |
+
+## 附录 D：执行账本
+
+本 RFC 的交付记录是 [`ledger/shared-goal-authority-state-provider-v0/`](ledger/shared-goal-authority-state-provider-v0/) 下的文件，
+一次改动一条带日期的条目，命名与镜像配对遵循
+[账本约定](ledger/README.zh-CN.md)。一条条目写清这次改动测到了什么、改了什么、以及没有确立什么。
+
+新记录写在这里，而不再写进附录 C 的那些带日期小节。附录 C 里已有的内容原样保留：它们是没人再编辑的只追加历史，
+把它们改写成文件只会产生一次很大的机械 diff，逼那些在途分支重做一遍合并——而这正是本改动想帮的对象，且什么都没能修好。
+理由是量出来的，不是猜的，见
+[`2026-09-19-shared-goal-authority-entries-get-a-ledger.zh-CN.md`](ledger/shared-goal-authority-state-provider-v0/2026-09-19-shared-goal-authority-entries-get-a-ledger.zh-CN.md)。
+
+`examples/docs-governance-smoke.py` 校验条目的命名、每条旁边的中文镜像，以及账本目录所指向的这份附录确实存在。
