@@ -557,7 +557,7 @@ export const typedActionsScenario = {
       pass(22, "Per-Goal sub-agent execution supports unrestricted and restricted policies, previews before writing, verifies shared-state readback, leaves no-domain Goals usable, and can be disabled again.");
 
       if (await page.locator("html").getAttribute("lang") !== "zh-CN") throw new Error("Desktop did not start in Simplified Chinese");
-      await page.getByRole("button", { name: "设置", exact: true }).click();
+      await page.locator('.personal-sidebar-utility[aria-label="设置"]').click();
       await page.getByRole("region", { name: "设置", exact: true }).waitFor({ state: "visible" });
       await page.getByRole("button", { name: /语言/ }).click();
       const englishLocale = page.getByRole("radio", { name: /English/ });
@@ -688,7 +688,7 @@ export const typedActionsScenario = {
       await page.getByRole("button", { name: /Close details/ }).click();
       pass(20, "English Goal and monitor previews stay read-only until confirmation, and applied Heartbeat readback preserves typed schedule semantics.");
 
-      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      await page.locator('.personal-sidebar-utility[aria-label="Settings"]').click();
       await page.getByRole("button", { name: /Language/ }).click();
       await page.getByRole("radio", { name: /Simplified Chinese/ }).click();
       await page.getByRole("heading", { level: 1, name: "语言", exact: true }).waitFor({ state: "visible" });
@@ -1064,7 +1064,7 @@ export const typedActionsScenario = {
       if (!(await page.getByText("loopx-ai/loopx", { exact: true }).isVisible())) throw new Error("Goal drawer did not show the read-only repository context");
       await page.getByRole("button", { name: /关闭详情/ }).click();
 
-      await page.getByRole("button", { name: "设置", exact: true }).click();
+      await page.locator('.personal-sidebar-utility[aria-label="设置"]').click();
       await page.getByRole("heading", { name: "Lark", exact: true }).waitFor({ state: "visible" });
       if (await page.locator(".personal-workspace-shell:visible").count()) throw new Error("Workspace Settings did not replace the workspace shell");
       if (await page.locator(".personal-channel-composer:visible").count()) throw new Error("Workspace Settings left the chat composer visible");
@@ -1371,7 +1371,7 @@ export const typedActionsScenario = {
       await checkpointCoverage();
       await page.reload({ waitUntil: "networkidle" });
       await page.getByTestId("personal-goal-home").waitFor({ state: "visible" });
-      await page.getByRole("button", { name: "设置", exact: true }).click();
+      await page.locator('.personal-sidebar-utility[aria-label="设置"]').click();
       const routeMismatchRow = page.locator(".personal-lark-table-row", { hasText: "Product group" });
       try {
         await routeMismatchRow.getByText("消息未匹配当前 Goal Topic", { exact: false }).waitFor({ state: "visible" });
@@ -1407,7 +1407,7 @@ export const typedActionsScenario = {
       Object.assign(legacyConnection, { ingress_mode: "direct_session", app_ref: "profile-alias-not-in-catalog", app_label: "Original Bot" });
       const legacyId = legacyConnection.connection_id;
       await page.getByRole("button", { name: "返回工作区", exact: true }).click();
-      await page.getByRole("button", { name: "设置", exact: true }).click();
+      await page.locator('.personal-sidebar-utility[aria-label="设置"]').click();
       const legacyRow = page.locator(".personal-lark-table-row", { hasText: "Original Bot" });
       await legacyRow.getByText("待升级", { exact: true }).waitFor({ state: "visible" });
       await legacyRow.getByRole("button", { name: /配置/ }).click();
@@ -1423,7 +1423,7 @@ export const typedActionsScenario = {
       const originalAgent = removedConnection.agent_id;
       removedConnection.agent_id = "removed-peer";
       await page.getByRole("button", { name: "返回工作区", exact: true }).click();
-      await page.getByRole("button", { name: "设置", exact: true }).click();
+      await page.locator('.personal-sidebar-utility[aria-label="设置"]').click();
       await page.locator(".personal-lark-table-row", { hasText: "removed-peer" }).getByRole("button", { name: /配置/ }).click();
       await editDialog.getByRole("alert").filter({ hasText: "不会自动替换" }).waitFor({ state: "visible" });
       if (!(await editDialog.getByRole("button", { name: "保存连接", exact: true }).isDisabled())) throw new Error("Removed recipient remained connectable");

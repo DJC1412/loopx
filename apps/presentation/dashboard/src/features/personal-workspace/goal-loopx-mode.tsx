@@ -39,6 +39,11 @@ export function GoalLoopXMode({sessionId, onPrepare, onExecute, onChange}: {
   const native = snapshot?.native.status ?? "absent";
   const resume = !["absent", "complete"].includes(native);
   const configured = Boolean(snapshot?.settings.agent_id && snapshot.settings.token_budget);
+  const editSettings = (current: LoopXModeSnapshot) => {
+    setSettings({agent_id: current.settings.agent_id ?? "", token_budget: current.settings.token_budget ?? 0,
+      execution_config: current.settings.execution_config ?? ".loopx/config/delegations.json"});
+    setEditing(true);
+  };
   const status = !snapshot?.enabled ? (zh ? "普通对话" : "Conversation")
     : snapshot.recovery_required ? (zh ? "LoopX · 需要恢复连接" : "LoopX · Reconnect required")
     : native === "blocked" ? (zh ? "LoopX · 需要处理阻塞" : "LoopX · Blocked")
@@ -47,10 +52,18 @@ export function GoalLoopXMode({sessionId, onPrepare, onExecute, onChange}: {
     : ["budgetLimited", "usageLimited"].includes(native) ? (zh ? "LoopX · 已到额度限制" : "LoopX · Usage limit")
     : (zh ? "LoopX · 已暂停" : "LoopX · Paused");
   const openSettings = () => {
-    setSettings({agent_id: snapshot?.settings.agent_id ?? "", token_budget: snapshot?.settings.token_budget ?? 0,
-      execution_config: snapshot?.settings.execution_config ?? ".loopx/config/delegations.json"});
-    setEditing(!editing);
+    if (snapshot && !editing) editSettings(snapshot);
+    else setEditing(false);
   };
+  async function prepareSettings() {
+    setBusy(true); setError("");
+    try {
+      const preparedSessionId = await onPrepare();
+      const result = await fetchLoopXMode(preparedSessionId);
+      setSnapshot(result); onChange(result); editSettings(result);
+    } catch (failure) {setError(failure instanceof Error ? failure.message : String(failure));}
+    finally {setBusy(false);}
+  }
   async function mutate(operation: string) {
     if (!sessionId) return;
     setBusy(true); setError("");
@@ -68,9 +81,7 @@ export function GoalLoopXMode({sessionId, onPrepare, onExecute, onChange}: {
       <div className="goal-loopx-mode-actions"><button type="button" disabled={busy || snapshot?.conversation_busy || !snapshot} onClick={openSettings} aria-expanded={editing}><Settings2 size={14}/>{zh ? "运行设置" : "Settings"}</button>
         <button type="button" disabled={busy || Boolean(snapshot?.conversation_busy && !active)} onClick={async () => {
           if (!snapshot) {
-            setBusy(true);
-            try { await onPrepare(); } catch (failure) {setError(failure instanceof Error ? failure.message : String(failure));}
-            finally {setBusy(false);}
+            await prepareSettings();
             return;
           }
           if (active) void mutate("pause");

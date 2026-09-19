@@ -100,7 +100,7 @@ export const navigationSortingScenario = {
       await stoppedDirectory.locator("summary").click();
       if (await page.locator(".personal-timeline-row").filter({ hasText: /纠偏/u }).count()) throw new Error("Browse rows expose repeated correction actions");
       pass(2, "Browse rows are full-row click targets and Session rows state that they open execution progress and results.");
-      const workspaceSettingsEntry = page.getByRole("button", { name: "设置", exact: true });
+      const workspaceSettingsEntry = page.locator('.personal-sidebar-utility[aria-label="设置"]');
       const settingsEntryVisual = await workspaceSettingsEntry.evaluate((element) => {
         const style = getComputedStyle(element);
         const icon = element.querySelector(".personal-sidebar-utility-icon")?.getBoundingClientRect();
@@ -374,7 +374,7 @@ export const navigationSortingScenario = {
 
       if (await page.locator(".personal-workspace-shell").getAttribute("data-pw-theme") !== "loopx") throw new Error("Personal workspace did not start with the LoopX standard theme");
       if (await page.getByRole("button", { name: /切换到野兽主题|切换到默认主题/ }).count()) throw new Error("Workspace header still exposes the old theme toggle");
-      await page.getByRole("button", { name: "设置", exact: true }).click();
+      await page.locator('.personal-sidebar-utility[aria-label="设置"]').click();
       await page.getByRole("button", { name: /外观/ }).click();
       await page.getByRole("radio", { name: /高对比/ }).click();
       if (await page.locator(".personal-settings-page").getAttribute("data-pw-theme") !== "brutal") throw new Error("Settings did not enable the high-contrast theme");

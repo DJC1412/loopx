@@ -363,6 +363,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
   const sessions = runtime.sessions;
   const messages = runtime.messages;
   const turnMessages = runtime.turnMessages;
+  const loopxModes = runtime.loopxModes ??= new Map();
   for (const proposal of initialActionProposals) {
     actionProposals.set(proposal.proposal_id, structuredClone(proposal));
   }
@@ -441,6 +442,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
     },
     operatorCredentialWrites: [],
     turnRequests: [],
+    loopxModeRequests: [],
     get larkConnections() { return runtime.larkConnections; },
     get goalSubagentConfigurations() { return runtime.goalSubagentConfigurations; },
   };
@@ -1424,6 +1426,44 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
       sessions.set(session_id, session);
       messages.set(session_id, messages.get(session_id) ?? []);
       await route.fulfill({ contentType: "application/json", json: { ok: true, agent_id: body.agent_id, goal_id: body.goal_id, resumed: body.mode === "resume_latest", session_id, session }, status: 201 });
+      return;
+    }
+    const loopxMode = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)\/loopx$/);
+    if (loopxMode) {
+      const sessionId = decodeURIComponent(loopxMode[1]);
+      const session = sessions.get(sessionId);
+      if (!session) {
+        await route.fulfill({ contentType: "application/json", json: { ok: false, error: "session not found" }, status: 404 });
+        return;
+      }
+      const current = loopxModes.get(sessionId) ?? {
+        ok: true,
+        session_id: sessionId,
+        enabled: false,
+        active_turn_id: null,
+        conversation_busy: false,
+        settings: {},
+        native: { status: "absent" },
+        registered_agents: ["lead"],
+        paused: false,
+        recovery_required: false,
+        members: [],
+        deliveries: [],
+        ingress: [],
+      };
+      if (request.method() === "GET") {
+        await route.fulfill({ contentType: "application/json", json: current, status: 200 });
+        return;
+      }
+      const body = request.postDataJSON();
+      state.loopxModeRequests.push({ sessionId, ...body });
+      if (body.operation !== "configure") {
+        await route.fulfill({ contentType: "application/json", json: { ok: false, error: "unsupported fixture operation" }, status: 400 });
+        return;
+      }
+      const configured = { ...current, settings: body.settings };
+      loopxModes.set(sessionId, configured);
+      await route.fulfill({ contentType: "application/json", json: configured, status: 200 });
       return;
     }
     const snapshot = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)$/);
