@@ -26,6 +26,52 @@ RELEASE_TIMELINE = REPO_ROOT / "docs" / "product" / "release-readiness.md"
 FIRST_PUBLIC_RELEASE = (0, 1, 3)
 VERSION_TAG_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 
+CANONICAL_REPO = "loopx-project/loopx"
+PRE_TRANSFER_REPO_URL = "github.com/huangruiteng/loopx"
+# Surfaces that hand an address to a user, a host or another tool at run time.
+LIVE_CODE_PREFIXES = ("loopx/", "scripts/", ".github/workflows/")
+LIVE_PACKAGE_MARKERS = ("/src/", "/package.json", "/examples/request.json", "/smoke/")
+DOCUMENT_SUFFIXES = (".md", ".html", ".txt")
+# Prose may cite the address an event happened under; a code or config default
+# may not, because it is what a shipped release keeps handing out.
+HISTORICAL_CITATION_RE = re.compile(
+    r"^/(pull|issues|commit|releases/download|archive)/[0-9A-Za-z]"
+)
+# The provider's project-disambiguation list and its smoke are the declared
+# exceptions: both must keep matching archived pages that cite the old address.
+DISAMBIGUATION_SOURCES = (
+    "packages/loopx-community-discussion/src/loopx_community_discussion/normalize.py",
+    "packages/loopx-community-discussion/smoke/community_discussion_smoke.py",
+)
+DISAMBIGUATION_TERMS_SOURCE = DISAMBIGUATION_SOURCES[0]
+# The packaged chat bundle is a build product, so a stale address inside it is
+# fixed by rebuilding rather than by hand-editing minified output.
+GENERATED_ASSET_PREFIXES = ("loopx/web/chat/assets/",)
+
+
+def _is_checked_surface(name: str) -> bool:
+    if name in DISAMBIGUATION_SOURCES:
+        return False
+    if name.startswith(GENERATED_ASSET_PREFIXES):
+        return False
+    if name.startswith(LIVE_CODE_PREFIXES):
+        return True
+    return name.startswith("packages/") and any(
+        marker in name for marker in LIVE_PACKAGE_MARKERS
+    )
+
+
+def _stale_live_pointer(text: str) -> str | None:
+    """Return the first old-address use that is a live pointer, not a citation."""
+
+    prose = text.endswith(DOCUMENT_SUFFIXES) or "/README" in text
+    for match in re.finditer(re.escape(PRE_TRANSFER_REPO_URL), text):
+        tail = text[match.end() : match.end() + 32]
+        if prose and HISTORICAL_CITATION_RE.match(tail):
+            continue
+        return tail.split("\n", 1)[0][:40]
+    return None
+
 
 def tracked_files() -> set[str]:
     completed = subprocess.run(
@@ -101,6 +147,40 @@ def release_tags() -> list[str]:
     return tags
 
 
+
+def validate_canonical_repository_pointer() -> None:
+    """Fail when a live surface still hands out the pre-transfer address.
+
+    The organization migration left GitHub redirecting the old URL, so nothing
+    fails loudly: a shipped first-run link, a projected documentation pointer or
+    a code default could keep naming the previous owner indefinitely. Prose may
+    still cite the address an event happened under, and the disambiguation list
+    must match both, so those are the declared exceptions rather than a widening
+    allowlist.
+    """
+    offenders: list[str] = []
+    for name in sorted(tracked_files()):
+        if not _is_checked_surface(name):
+            continue
+        stale = _stale_live_pointer(
+            (REPO_ROOT / name).read_text(encoding="utf-8", errors="replace")
+        )
+        if stale is not None:
+            offenders.append(f"{name} ({stale})")
+    if offenders:
+        raise AssertionError(
+            f"live surfaces must name the canonical {CANONICAL_REPO}; "
+            f"{PRE_TRANSFER_REPO_URL} still appears in: {offenders}"
+        )
+    terms = (REPO_ROOT / DISAMBIGUATION_TERMS_SOURCE).read_text(encoding="utf-8")
+    for address in (CANONICAL_REPO, PRE_TRANSFER_REPO_URL.removeprefix("github.com/")):
+        if f"github.com/{address}" not in terms:
+            raise AssertionError(
+                f"project disambiguation terms dropped {address}; current and archived "
+                "pages must both classify as this project"
+            )
+
+
 def validate_release_timeline() -> None:
     if not RELEASE_TIMELINE.is_file():
         raise AssertionError(f"missing release timeline: {RELEASE_TIMELINE.relative_to(REPO_ROOT)}")
@@ -122,6 +202,7 @@ def main() -> int:
     files = tracked_files()
     validate_required_tracked_files(files)
     validate_public_private_boundary()
+    validate_canonical_repository_pointer()
     validate_release_timeline()
     print("repository-hygiene-smoke ok")
     return 0
