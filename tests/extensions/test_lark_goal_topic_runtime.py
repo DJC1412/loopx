@@ -5,6 +5,7 @@ import json
 import subprocess
 import threading
 from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,20 @@ from loopx.extensions.lark.goal_channel_contracts import (
 )
 from loopx.extensions.lark.goal_channel_targets import read_goal_channel_targets
 from loopx.extensions.lark.goal_topic_connections import connect_lark_goal_topic
+
+
+def _fixture_time(minutes_ago: int) -> str:
+    """One hour of topic history, placed relative to the run.
+
+    Manager context is bounded by MANAGER_CONTEXT_MAX_AGE, so a literal date in
+    these fixtures turns the calendar into a test dependency. Whole-minute
+    resolution keeps repeated calls equal, as the fixed timestamps were.
+    """
+
+    moment = (datetime.now(UTC) - timedelta(minutes=minutes_ago)).replace(
+        second=0, microsecond=0
+    )
+    return moment.isoformat().replace("+00:00", "Z")
 
 
 def test_goal_topic_runtime_exposes_the_inbox_bridge() -> None:
@@ -342,7 +357,7 @@ def test_manager_captures_unaddressed_context_without_granting_turn_authority(
             "message_id": "om_context_only",
             "chat_id": "oc_public_fixture",
             "root_id": "om_unrelated_thread",
-            "create_time": "2026-09-13T05:59:00Z",
+            "create_time": _fixture_time(61),
             "content": "先把这个背景放在这里",
             "mentions": [],
             "sender_type": "user",
@@ -363,7 +378,7 @@ def test_manager_captures_unaddressed_context_without_granting_turn_authority(
             "message_id": "om_context_only",
             "chat_id": "oc_public_fixture",
             "root_id": "om_unrelated_thread",
-            "create_time": "2026-09-13T05:59:00Z",
+            "create_time": _fixture_time(61),
             "content": "先把这个背景放在这里",
             "mentions": [],
             "sender_type": "user",
@@ -387,7 +402,7 @@ def test_manager_captures_unaddressed_context_without_granting_turn_authority(
             "message_id": "om_authorized",
             "chat_id": "oc_public_fixture",
             "root_id": "om_unrelated_thread",
-            "create_time": "2026-09-13T06:00:00Z",
+            "create_time": _fixture_time(60),
             "content": "@linkmacbot 结合上文给结论",
             "mentions": [{"id": "cli_public_fixture"}],
             "sender_type": "user",
@@ -404,7 +419,7 @@ def test_manager_captures_unaddressed_context_without_granting_turn_authority(
     assert route["context_materials"] == [
         {
             "message_id": "om_context_only",
-            "create_time": "2026-09-13T05:59:00Z",
+            "create_time": _fixture_time(61),
             "content": "先把这个背景放在这里",
         }
     ]
@@ -450,7 +465,7 @@ def test_manager_route_rejects_missing_or_unknown_authority_mode(
             "message_id": "om_invalid_authority",
             "chat_id": "oc_public_fixture",
             "root_id": "om_topic_alpha",
-            "create_time": "2026-09-13T06:00:00Z",
+            "create_time": _fixture_time(60),
             "content": "continue",
             "mentions": [],
             "sender_type": "user",
@@ -516,7 +531,7 @@ def test_manager_authorized_turn_quietly_recovers_history_as_context(
                     {
                         "message_id": "om_old_authorized",
                         "root_id": "om_topic_alpha",
-                        "create_time": "2026-09-13T05:59:00Z",
+                        "create_time": _fixture_time(61),
                         "content": "@linkmacbot 历史请求只作背景",
                         "mentions": [{"id": "cli_public_fixture"}],
                         "sender_type": "user",
@@ -545,7 +560,7 @@ def test_manager_authorized_turn_quietly_recovers_history_as_context(
             "message_id": "om_current_authorized",
             "chat_id": "oc_public_fixture",
             "root_id": "om_topic_alpha",
-            "create_time": "2026-09-13T06:00:00Z",
+            "create_time": _fixture_time(60),
             "content": "@linkmacbot 结合刚才内容回答",
             "mentions": [{"id": "cli_public_fixture"}],
             "sender_type": "user",
