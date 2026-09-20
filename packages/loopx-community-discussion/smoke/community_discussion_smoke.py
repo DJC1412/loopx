@@ -99,6 +99,15 @@ def _pre_and_post_transfer_addresses_are_both_strong() -> int:
         author="external-user",
         published_at="2026-09-18T00:00:00Z",
     )
+    generic = make_fact(
+        fact_type="external_discussion",
+        source="github",
+        source_url="https://github.com/example/other-tool/issues/3",
+        title="How do we schedule background jobs",
+        author="someone",
+        published_at="2026-09-16T00:00:00Z",
+        text="a question with no project identity in it",
+    )
     noise = make_fact(
         fact_type="ecosystem_signal",
         source="hacker_news",
@@ -113,6 +122,12 @@ def _pre_and_post_transfer_addresses_are_both_strong() -> int:
             return 1
     if noise is not None:
         print(f"FAIL: noise term must stay dropped, got {noise}")
+        return 1
+    if generic is None or generic["relevance"] != "weak":
+        print(
+            "FAIL: a fact with no project identity must stay weak rather than be "
+            f"promoted or dropped, got {generic}"
+        )
         return 1
     return 0
 
