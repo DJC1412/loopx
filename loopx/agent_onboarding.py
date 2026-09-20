@@ -242,7 +242,7 @@ def _skill_delivery_contract(
                 else {}
             )
         ),
-        "source_repository": "https://github.com/huangruiteng/loopx",
+        "source_repository": "https://github.com/loopx-project/loopx",
         "source_directories": [
             f"skills/{skill_id}"
             for skill_id in required_skill_ids

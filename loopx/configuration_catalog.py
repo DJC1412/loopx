@@ -167,7 +167,7 @@ def build_goal_configuration_catalog(
                 "documentation": {
                     "path": "docs/quota-allocation.md#completed-todo-review-cadence",
                     "url": (
-                        "https://github.com/huangruiteng/loopx/blob/main/"
+                        "https://github.com/loopx-project/loopx/blob/main/"
                         "docs/quota-allocation.md#completed-todo-review-cadence"
                     ),
                 },
@@ -216,7 +216,7 @@ def build_goal_configuration_catalog(
                 "documentation": {
                     "path": "docs/architecture/rfcs/shared-goal-authority-state-provider-v0.md",
                     "url": (
-                        "https://github.com/huangruiteng/loopx/blob/main/"
+                        "https://github.com/loopx-project/loopx/blob/main/"
                         "docs/architecture/rfcs/shared-goal-authority-state-provider-v0.md"
                     ),
                 },
@@ -280,7 +280,7 @@ def build_goal_configuration_catalog(
                 "documentation": {
                     "path": "docs/integrations/codex-subagent-orchestration.md",
                     "url": (
-                        "https://github.com/huangruiteng/loopx/blob/main/"
+                        "https://github.com/loopx-project/loopx/blob/main/"
                         "docs/integrations/codex-subagent-orchestration.md"
                     ),
                 },
@@ -341,7 +341,7 @@ def build_goal_configuration_catalog(
                 "documentation": {
                     "path": "docs/integrations/codex-subagent-orchestration.md",
                     "url": (
-                        "https://github.com/huangruiteng/loopx/blob/main/"
+                        "https://github.com/loopx-project/loopx/blob/main/"
                         "docs/integrations/codex-subagent-orchestration.md"
                     ),
                 },
@@ -390,7 +390,7 @@ def build_goal_configuration_catalog(
                 "documentation": {
                     "path": "loopx/capabilities/explore/README.md",
                     "url": (
-                        "https://github.com/huangruiteng/loopx/blob/main/"
+                        "https://github.com/loopx-project/loopx/blob/main/"
                         "loopx/capabilities/explore/README.md"
                     ),
                 },
@@ -443,7 +443,7 @@ def build_goal_configuration_catalog(
                 "documentation": {
                     "path": "loopx/capabilities/explore/README.md",
                     "url": (
-                        "https://github.com/huangruiteng/loopx/blob/main/"
+                        "https://github.com/loopx-project/loopx/blob/main/"
                         "loopx/capabilities/explore/README.md"
                     ),
                 },
@@ -535,7 +535,7 @@ def build_goal_configuration_catalog(
                 "documentation": {
                     "path": "loopx/capabilities/change_quality/README.md",
                     "url": (
-                        "https://github.com/huangruiteng/loopx/blob/main/"
+                        "https://github.com/loopx-project/loopx/blob/main/"
                         "loopx/capabilities/change_quality/README.md"
                     ),
                 },
@@ -630,7 +630,7 @@ def build_goal_configuration_catalog(
                 "documentation": {
                     "path": "loopx/capabilities/reward_memory/README.md",
                     "url": (
-                        "https://github.com/huangruiteng/loopx/blob/main/"
+                        "https://github.com/loopx-project/loopx/blob/main/"
                         "loopx/capabilities/reward_memory/README.md"
                     ),
                 },
@@ -701,7 +701,7 @@ def build_goal_configuration_catalog(
                 "documentation": {
                     "path": "loopx/extensions/lark/docs/lark-event-inbox.md",
                     "url": (
-                        "https://github.com/huangruiteng/loopx/blob/main/"
+                        "https://github.com/loopx-project/loopx/blob/main/"
                         "loopx/extensions/lark/docs/lark-event-inbox.md"
                     ),
                 },
@@ -758,7 +758,7 @@ def build_goal_configuration_catalog(
                 "documentation": {
                     "path": "docs/integrations/lark-kanban-control-plane-adapter.md",
                     "url": (
-                        "https://github.com/huangruiteng/loopx/blob/main/"
+                        "https://github.com/loopx-project/loopx/blob/main/"
                         "docs/integrations/lark-kanban-control-plane-adapter.md"
                     ),
                 },

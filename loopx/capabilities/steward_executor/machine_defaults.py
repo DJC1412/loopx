@@ -145,7 +145,7 @@ def steward_executor_machine_configuration_namespace() -> (
         documentation={
             "path": "docs/architecture/rfcs/harness-selection-dsh-pi-v0.md",
             "url": (
-                "https://github.com/huangruiteng/loopx/blob/main/"
+                "https://github.com/loopx-project/loopx/blob/main/"
                 "docs/architecture/rfcs/harness-selection-dsh-pi-v0.md"
             ),
         },

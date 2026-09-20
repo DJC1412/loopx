@@ -1360,8 +1360,8 @@ All commands are local and no-upload by default. `benchmark-toolkit` grants no m
 Docker, runner, upload, submission, publication, or production authority.
 
 The active benchmark research program and current public-safe practice live under
-[`benchmark/`](https://github.com/huangruiteng/loopx/blob/main/benchmark/README.md). Retired implementations, superseded runners, and dated research
-packets are retained under [`deprecate/benchmark-legacy/`](https://github.com/huangruiteng/loopx/blob/main/deprecate/benchmark-legacy/README.md)
+[`benchmark/`](https://github.com/loopx-project/loopx/blob/main/benchmark/README.md). Retired implementations, superseded runners, and dated research
+packets are retained under [`deprecate/benchmark-legacy/`](https://github.com/loopx-project/loopx/blob/main/deprecate/benchmark-legacy/README.md)
 for source archaeology only.
 Immutable experiment snapshots follow the canonical
 [archive placement rules](../../../benchmark/README.md#archive-placement),

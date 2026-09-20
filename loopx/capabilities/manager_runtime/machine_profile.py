@@ -54,7 +54,7 @@ def manager_runtime_machine_configuration_namespace() -> MachineConfigurationNam
         documentation={
             "path": "docs/architecture/rfcs/manager-runtime-profile-v0.md",
             "url": (
-                "https://github.com/huangruiteng/loopx/blob/main/"
+                "https://github.com/loopx-project/loopx/blob/main/"
                 "docs/architecture/rfcs/manager-runtime-profile-v0.md"
             ),
         },
